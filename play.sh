@@ -13,29 +13,53 @@
 #     WINEPREFIX="$HOME/.wine"
 set -u
 
+VERSION="0.1"
+
+C_RESET="$(tput sgr0 2>/dev/null)"
+C_BOLD="$(tput bold 2>/dev/null)"
+C_DIM="$(tput dim 2>/dev/null)"
+C_WHITE="$(tput setaf 7 2>/dev/null)"
+C_GRAY="$(tput setaf 8 2>/dev/null)"
+[ -z "$C_GRAY" ] && C_GRAY="$C_DIM"
+C_ACCENT="$(tput setaf 12 2>/dev/null)"
+[ -z "$C_ACCENT" ] && C_ACCENT="$(tput setaf 6 2>/dev/null)"
+
 CONFIG="${PLAY_CONFIG:-$HOME/.config/play/config}"
 [ -f "$CONFIG" ] && . "$CONFIG"
 
+help() {
+  cat <<EOF
+${C_ACCENT}   ✦ play ${C_GRAY}v$VERSION${C_RESET}
+${C_GRAY}   ─────────────────────────────────────${C_RESET}
+
+${C_WHITE}${C_BOLD}   ████ █     ██  █  █
+   █  █ █    █  █ █  █
+   ████ █    ████  ██
+   █    █    █  █  █
+   █    ████ █  █  █${C_RESET}
+
+${C_ACCENT}${C_BOLD}usage${C_RESET}   ${C_GRAY}play.sh /path/to/game.exe [mode] [game-args...]${C_RESET}
+
+${C_ACCENT}${C_BOLD}modes${C_RESET}
+${C_WHITE}${C_BOLD}   Bep${C_RESET}  ${C_DIM}BepInEx mod loader (winhttp=n,b)${C_RESET}
+${C_WHITE}${C_BOLD}   Hud${C_RESET}  ${C_DIM}MangoHud overlay + FPS log (needs: sudo apt install mangohud)${C_RESET}
+
+${C_ACCENT}${C_BOLD}config${C_RESET}  ${C_GRAY}${PLAY_CONFIG:-~/.config/play/config}${C_RESET}
+${C_WHITE}   WINE_BIN${C_RESET}    ${C_DIM}wine binary (default GE-Proton)${C_RESET}
+${C_WHITE}   GPU_NAME${C_RESET}    ${C_DIM}DXVK device filter (auto-detected)${C_RESET}
+${C_WHITE}   WINEPREFIX${C_RESET}  ${C_DIM}wine prefix (default ~/.wine)${C_RESET}
+
+${C_ACCENT}${C_BOLD}examples${C_RESET}
+${C_WHITE}${C_BOLD}   play.sh game.exe${C_RESET}
+${C_WHITE}${C_BOLD}   play.sh game.exe Bep -windowed${C_RESET}
+${C_WHITE}${C_BOLD}   play.sh game.exe Hud${C_RESET}
+EOF
+  exit 0
+}
+
 GAME="${1:-}"
 case "$GAME" in
-  -h|--help)
-    echo "usage: play.sh /path/to/game.exe [mode] [game-args...]"
-    echo
-    echo "Run a Windows game via Wine + DXVK, favouring the discrete GPU."
-    echo
-    echo "modes:"
-    echo "  Bep|bep|bepinex    BepInEx mod loader (winhttp=n,b)"
-    echo "  Hud|hud|mangohud   MangoHud overlay + FPS log (needs: sudo apt install mangohud)"
-    echo
-    echo "config (optional): ${PLAY_CONFIG:-~/.config/play/config}"
-    echo "  WINE_BIN, GPU_NAME, WINEPREFIX"
-    echo
-    echo "examples:"
-    echo "  play.sh game.exe"
-    echo "  play.sh game.exe Bep -windowed"
-    echo "  play.sh game.exe Hud"
-    exit 0
-    ;;
+  -h|--help) help ;;
 esac
 if [ -z "$GAME" ]; then
   echo "usage: play.sh /path/to/game.exe [mode] [game-args...]"
