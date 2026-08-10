@@ -1,0 +1,12 @@
+# play.sh config — copy to ~/.config/play/config and edit
+
+# Wine binary to use. Default: GE-Proton (download from
+# https://github.com/GloriousEggroll/proton-ge-custom/releases)
+#WINE_BIN="$HOME/.local/share/GE-Proton11-3/files/bin/wine"
+
+# GPU to force for DXVK. Default: auto-detected discrete GPU.
+# See `vulkaninfo --summary | grep deviceName` for valid names.
+#GPU_NAME="NVIDIA GeForce MX130"
+
+# Wine prefix to use.
+#WINEPREFIX="$HOME/.wine"
