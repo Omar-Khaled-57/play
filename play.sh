@@ -17,6 +17,26 @@ CONFIG="${PLAY_CONFIG:-$HOME/.config/play/config}"
 [ -f "$CONFIG" ] && . "$CONFIG"
 
 GAME="${1:-}"
+case "$GAME" in
+  -h|--help)
+    echo "usage: play.sh /path/to/game.exe [mode] [game-args...]"
+    echo
+    echo "Run a Windows game via Wine + DXVK, favouring the discrete GPU."
+    echo
+    echo "modes:"
+    echo "  Bep|bep|bepinex    BepInEx mod loader (winhttp=n,b)"
+    echo "  Hud|hud|mangohud   MangoHud overlay + FPS log (needs: sudo apt install mangohud)"
+    echo
+    echo "config (optional): ${PLAY_CONFIG:-~/.config/play/config}"
+    echo "  WINE_BIN, GPU_NAME, WINEPREFIX"
+    echo
+    echo "examples:"
+    echo "  play.sh game.exe"
+    echo "  play.sh game.exe Bep -windowed"
+    echo "  play.sh game.exe Hud"
+    exit 0
+    ;;
+esac
 if [ -z "$GAME" ]; then
   echo "usage: play.sh /path/to/game.exe [mode] [game-args...]"
   echo "modes: Bep (BepInEx), Hud (MangoHud)"

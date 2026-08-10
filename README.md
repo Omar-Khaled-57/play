@@ -45,7 +45,14 @@ WINEPREFIX="$HOME/.wine"
 
 The discrete GPU is auto-detected from `vulkaninfo` when `GPU_NAME` is unset.
 
-## hmntr — health monitor
+## hmntr — minimal one-line health bar
+
+A single subtle line (NVIDIA-overlay style) refreshed in place; it never
+clears the screen or swallows the terminal:
+
+```text
+CPU 17%  GPU 0% 46C  RAM 8G/14G  TMP 52C  FPS 60
+```
 
 ```bash
 hmntr                        # all meters
@@ -57,9 +64,12 @@ hmntr -n 2                   # refresh every 2 seconds
 Meters: `cpu`, `gpu`, `ram`, `fps`, `cputemp`.
 
 - `cpu` / `ram` — read from `/proc` (no deps)
-- `gpu` — `nvidia-smi`, or `/sys/class/drm/.../gpu_busy_percent`
+- `gpu` — `nvidia-smi` (usage + temp), or `/sys/class/drm/.../gpu_busy_percent`
 - `cputemp` — from `/sys/class/thermal`
 - `fps` — reads MangoHud's log, so start the game with `play game.exe Hud`
+
+Values turn yellow above 70% and red above 90%; temps yellow above 65C and
+red above 80C.
 
 ## License
 
