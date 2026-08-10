@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""hud - translucent HUD overlay. Backend for: play <game> hud.
+
+Shows a small always-on-top overlay in the bottom-right corner with live
+system stats. Left-drag to move it, scroll wheel to change opacity,
+right-click to quit.
+
+FPS comes from play's own Vulkan layer (see fpslayer/), which writes the
+frame rate to PLAY_FPS_FILE (default /tmp/play/fps.txt) - no MangoHud.
+
+Options (environment):
+  HMNTR_METERS="cpu gpu ram fps cputemp"   subset to show
+  HMNTR_INTERVAL=1                         refresh seconds
+  HMNTR_OPACITY=0.75                       initial overlay opacity
+  PLAY_FPS_FILE=/tmp/play/fps.txt          FPS file written by the play layer
+"""
+import os
+import sys
+import time
+import signal
+import subprocess
+
+PLAY_FPS_FILE = os.environ.get("PLAY_FPS_FILE", "/tmp/play/fps.txt")
+
+C_NORM = "#eceff4"
+C_DIM = "#9aa4bd"
+C_WARN = "#f4d35e"
+C_CRIT = "#ff5c5c"
+
+FONT = "monospace 13"
+
+
+class State:
+    t = None
+    i = None
+
+
+def cpu_usage(st):
+    try:
+        with open("/proc/stat") as f:
+            p = f.readline().split()
+        t = sum(int(x) for x in p[1:])
+        i = int(p[4])
+        if st.t is None:
+            st.t, st.i = t, i
+            return 0
+        db = (t - i) - (st.t - st.i)
+        dt = t - st.t
+        st.t, st.i = t, i
+        return int(db * 100 / dt) if dt > 0 else 0
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def ram():
+    try:
+        total = avail = 0
+        with open("/proc/meminfo") as f:
+            for line in f:
+                k, v = line.split(":", 1)
+                if k == "MemTotal":
+                    total = int(v.split()[0])
+                elif k == "MemAvailable":
+                    avail = int(v.split()[0])
+        if not total:
+            return None, None
+        return (total - avail) / 1024 / 1024, total / 1024 / 1024
+    except (OSError, ValueError):
+        return None, None
+
+
+def cpu_temp():
+    base = "/sys/class/thermal"
+    try:
+        zones = [z for z in sorted(os.listdir(base)) if z.startswith("thermal_zone")]
+    except OSError:
+        return None
+    for z in zones:
+        try:
+            typ = open(os.path.join(base, z, "type")).read().strip()
+        except OSError:
+            continue
+        if any(k in typ.lower() for k in ("x86_pkg", "acpitz", "cpu", "package")):
+            try:
+                t = int(open(os.path.join(base, z, "temp")).read().strip()) // 1000
+            except (OSError, ValueError):
+                continue
+            if t > 0:
+                return t
+    for z in zones:
+        try:
+            t = int(open(os.path.join(base, z, "temp")).read().strip()) // 1000
+        except (OSError, ValueError):
+            continue
+        if t > 0:
+            return t
+    return None
+
+
+def gpu():
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5)
+        parts = [p.strip() for p in out.stdout.split(",")]
+        return int(parts[0]), int(parts[1])
+    except Exception:
+        return None, None
+
+
+def fps():
+    try:
+        m = os.path.getmtime(PLAY_FPS_FILE)
+    except OSError:
+        return None
+    if time.time() - m > 2.0:
+        return None
+    try:
+        with open(PLAY_FPS_FILE) as f:
+            return int(float(f.read().strip()))
+    except (OSError, ValueError):
+        return None
+
+
+def overlay(Gtk, Gdk, GLib, Pango, meters, interval, opacity):
+    state = State()
+    margin = 36
+    pad_x, pad_y = 14, 8
+    op = {"v": max(0.35, min(1.0, opacity))}
+    drag = {"on": False, "dx": 0.0, "dy": 0.0, "px": 0, "py": 0}
+    markup = [""]
+
+    win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+    win.set_app_paintable(True)
+    win.set_decorated(False)
+    win.set_skip_taskbar_hint(True)
+    win.set_accept_focus(False)
+    win.set_can_focus(False)
+    win.set_focus_on_map(False)
+    win.set_keep_above(True)
+    rgba = win.get_screen().get_rgba_visual()
+    if rgba:
+        win.set_visual(rgba)
+
+    provider = Gtk.CssProvider()
+    Gtk.StyleContext.add_provider_for_screen(
+        win.get_screen(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+    def apply_css():
+        provider.load_from_data(
+            ("#hudbox { background-color: rgba(10, 10, 15, %g); "
+             "border-radius: 12px; padding: %dpx %dpx; }")
+            % (op["v"], pad_y, pad_x))
+    apply_css()
+
+    box = Gtk.Box()
+    box.set_name("hudbox")
+    win.add(box)
+    label = Gtk.Label()
+    label.set_use_markup(True)
+    label.set_single_line_mode(True)
+    label.override_font(Pango.FontDescription(FONT))
+    box.add(label)
+
+    def dim(label):
+        return '<span color="%s">%s</span>' % (C_DIM, label)
+
+    def val(v, warn, crit):
+        if v is None:
+            return "n/a"
+        if v >= crit:
+            c = C_CRIT
+        elif v >= warn:
+            c = C_WARN
+        else:
+            c = C_NORM
+        return '<span foreground="%s">%d</span>' % (c, v)
+
+    def build_markup():
+        cpu = cpu_usage(state)
+        gu, gt = gpu()
+        ru, rt = ram()
+        temp = cpu_temp()
+        fpsv = fps()
+        segs = []
+        for m in meters:
+            if m == "cpu" and cpu is not None:
+                segs.append("%s %s%%" % (dim("CPU"), val(cpu, 70, 90)))
+            elif m == "gpu" and gu is not None:
+                s = "%s %s%%" % (dim("GPU"), val(gu, 70, 90))
+                if gt is not None:
+                    s += " %sC" % val(gt, 65, 80)
+                segs.append(s)
+            elif m == "ram" and ru is not None and rt is not None:
+                segs.append("%s %dG/%dG" % (dim("RAM"), ru, rt))
+            elif m == "cputemp" and temp is not None:
+                segs.append("%s %sC" % (dim("TMP"), val(temp, 65, 80)))
+            elif m == "fps" and fpsv is not None:
+                segs.append("%s %d" % (dim("FPS"), fpsv))
+        return "  ".join(segs)
+
+    def measure():
+        layout = label.create_pango_layout("")
+        layout.set_font_description(Pango.FontDescription(FONT))
+        layout.set_markup(markup[0])
+        return layout.get_pixel_size()
+
+    def place(tw, th):
+        screen = win.get_screen()
+        sw = screen.get_width()
+        sh = screen.get_height()
+        w = min(tw + 2 * pad_x, max(sw - 2 * margin, 1))
+        h = th + 2 * pad_y
+        win.resize(w, h)
+        win.move(sw - w - margin, sh - h - margin)
+
+    def tick():
+        markup[0] = build_markup()
+        label.set_markup(markup[0])
+        try:
+            tw, th = measure()
+        except AttributeError:
+            return True
+        place(tw, th)
+        return True
+
+    def on_press(w, ev):
+        if ev.button == 3:
+            Gtk.main_quit()
+            return True
+        if ev.button == 1:
+            drag["on"] = True
+            drag["dx"] = ev.x
+            drag["dy"] = ev.y
+            drag["px"], drag["py"] = win.get_position()
+            return True
+        return False
+
+    def on_release(w, ev):
+        if ev.button == 1:
+            drag["on"] = False
+        return False
+
+    def on_motion(w, ev):
+        if not drag["on"]:
+            return False
+        win.move(drag["px"] + int(ev.x - drag["dx"]),
+                 drag["py"] + int(ev.y - drag["dy"]))
+        px, py = win.get_position()
+        drag["px"], drag["py"] = px, py
+        drag["dx"], drag["dy"] = ev.x, ev.y
+        return True
+
+    def on_scroll(w, ev):
+        if ev.direction == Gdk.ScrollDirection.UP:
+            op["v"] = min(1.0, op["v"] + 0.05)
+        elif ev.direction == Gdk.ScrollDirection.DOWN:
+            op["v"] = max(0.35, op["v"] - 0.05)
+        apply_css()
+        return True
+
+    win.add_events(Gdk.EventMask.POINTER_MOTION_MASK
+                   | Gdk.EventMask.BUTTON_PRESS_MASK
+                   | Gdk.EventMask.BUTTON_RELEASE_MASK
+                   | Gdk.EventMask.SCROLL_MASK)
+    win.connect("button-press-event", on_press)
+    win.connect("button-release-event", on_release)
+    win.connect("motion-notify-event", on_motion)
+    win.connect("scroll-event", on_scroll)
+
+    def _quit(*_a):
+        Gtk.main_quit()
+
+    for s in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(s, _quit)
+
+    win.show_all()
+
+    def tick_once():
+        tick()
+        return False
+
+    GLib.idle_add(tick_once)
+    GLib.timeout_add(int(interval * 1000), tick)
+    Gtk.main()
+
+
+def main():
+    meters = (os.environ.get("HMNTR_METERS") or "cpu gpu ram fps cputemp").split()
+    interval = float(os.environ.get("HMNTR_INTERVAL", "1"))
+    opacity = float(os.environ.get("HMNTR_OPACITY", "0.75"))
+    argv = sys.argv[1:]
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("-h", "--help"):
+            print("hud: HUD overlay used by: play <game> hud")
+            print("env: HMNTR_METERS HMNTR_INTERVAL HMNTR_OPACITY PLAY_FPS_FILE")
+            return 0
+        elif a in ("-n", "--interval") and i + 1 < len(argv):
+            interval = float(argv[i + 1])
+            i += 1
+        elif a == "--opacity" and i + 1 < len(argv):
+            opacity = float(argv[i + 1])
+            i += 1
+        else:
+            print("hud: unknown option: %s" % a, file=sys.stderr)
+            return 2
+        i += 1
+
+    if "DISPLAY" in os.environ and os.environ.get("GDK_BACKEND") is None:
+        os.environ["GDK_BACKEND"] = "x11"
+
+    try:
+        import gi
+        gi.require_version("Gtk", "3.0")
+        gi.require_version("Pango", "1.0")
+        from gi.repository import Gtk, Gdk, GLib, Pango
+    except (ImportError, ValueError) as e:
+        print("hud: python3-gi (GTK3) required for the HUD: %s" % e, file=sys.stderr)
+        return 1
+
+    try:
+        overlay(Gtk, Gdk, GLib, Pango, meters, interval, opacity)
+        return 0
+    except Exception as e:
+        print("hud: %s" % e, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

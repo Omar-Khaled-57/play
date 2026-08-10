@@ -1,0 +1,11 @@
+{
+  "file_format_version": "1.0.0",
+  "layer": {
+    "name": "VK_LAYER_PLAY_fps",
+    "type": "GLOBAL",
+    "library_path": "./play_fps.so",
+    "api_version": "1.4.0",
+    "implementation_version": "1",
+    "description": "play: count presented frames and write FPS to /tmp/play/fps.txt"
+  }
+}

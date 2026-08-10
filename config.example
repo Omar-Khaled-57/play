@@ -10,3 +10,8 @@
 
 # Wine prefix to use.
 #WINEPREFIX="$HOME/.wine"
+
+# HUD overlay options (used by: play <game> hud)
+#HMNTR_METERS="cpu gpu ram fps cputemp"   # meters to show
+#HMNTR_INTERVAL=1                         # refresh seconds
+#HMNTR_OPACITY=0.75                       # overlay opacity (0.35 - 1.0)
