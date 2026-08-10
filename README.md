@@ -25,6 +25,7 @@ sudo ln -s "$(pwd)/play.sh" /usr/local/bin/play
 play "/path/to/game.exe"            # launch a game
 play "/path/to/game.exe" Bep        # launch with BepInEx mod loader
 play "/path/to/game.exe" hud        # launch with the translucent HUD overlay
+play "/path/to/game.exe" Bep hud    # combine modes: mod loader + HUD
 play "/path/to/game.exe" MangoHud   # launch with MangoHud overlay + FPS log
 play hud                           # standalone HUD, no game (system monitor)
 play "/path/to/game.exe" Bep -windowed   # extra args pass through to the game
@@ -33,6 +34,10 @@ play "/path/to/game.exe" Bep -windowed   # extra args pass through to the game
 `play hud` (or `play --hud`) runs just the overlay for general reading of the
 machine — no game, keeps running until right-clicked or Ctrl-C'd.
 
+Modes combine in any order: `play game.exe Bep hud` enables the BepInEx loader
+**and** the HUD overlay. Anything that isn't a mode is passed to the game as
+an argument.
+
 ### Modes
 
 | Mode | Effect |
@@ -40,6 +45,9 @@ machine — no game, keeps running until right-clicked or Ctrl-C'd.
 | `Bep` | Sets `WINEDLLOVERRIDES=winhttp=n,b` for BepInEx mods |
 | `hud` | Shows a translucent always-on-top HUD overlay with system stats + FPS |
 | `MangoHud` | Runs MangoHud's in-game overlay and logs FPS to `/tmp/play` |
+
+Multiple modes combine in any order (`play game.exe Bep hud`); other
+arguments are passed through to the game.
 
 ## hud — translucent HUD overlay
 

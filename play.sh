@@ -1,8 +1,8 @@
 #!/bin/bash
-# play.sh <game.exe> [mode] [args...]
+# play.sh <game.exe> [modes...] [args...]
 # Run a Windows game via Wine + DXVK, favouring the discrete GPU.
 #
-# Modes:
+# Modes (any number, any order):
 #   Bep|bep|bepinex    BepInEx mod loader (winhttp=n,b)
 #   hud|Hud|hmntr      translucent HUD overlay (FPS from play's own Vulkan layer)
 #   MangoHud|mangohud  MangoHud overlay + FPS log (needs: sudo apt install mangohud)
@@ -15,7 +15,7 @@
 #   HUD options (env): HMNTR_METERS, HMNTR_INTERVAL, HMNTR_OPACITY
 set -u
 
-VERSION="0.3"
+VERSION="0.4"
 
 C_RESET="$(tput sgr0 2>/dev/null)"
 C_BOLD="$(tput bold 2>/dev/null)"
@@ -42,12 +42,13 @@ ${C_WHITE}${C_BOLD}   ████ █     ██  █  █
    █    █    █  █  █
    █    ████ █  █  █${C_RESET}
 
-${C_ACCENT}${C_BOLD}usage${C_RESET}   ${C_GRAY}play.sh /path/to/game.exe [mode] [game-args...]${C_RESET}
+${C_ACCENT}${C_BOLD}usage${C_RESET}   ${C_GRAY}play.sh /path/to/game.exe [modes...] [game-args...]${C_RESET}
 
 ${C_ACCENT}${C_BOLD}modes${C_RESET}
 ${C_WHITE}${C_BOLD}   Bep${C_RESET}     ${C_DIM}BepInEx mod loader (winhttp=n,b)${C_RESET}
 ${C_WHITE}${C_BOLD}   hud${C_RESET}     ${C_DIM}translucent HUD overlay (FPS from play's Vulkan layer)${C_RESET}
 ${C_WHITE}${C_BOLD}   MangoHud${C_RESET}${C_DIM} MangoHud overlay + FPS log (needs: sudo apt install mangohud)${C_RESET}
+${C_DIM}${C_WHITE}${C_BOLD}   ─ modes combine in any order, e.g. 'game.exe Bep hud'${C_RESET}
 
 ${C_ACCENT}${C_BOLD}config${C_RESET}  ${C_GRAY}${PLAY_CONFIG:-~/.config/play/config}${C_RESET}
 ${C_WHITE}   WINE_BIN${C_RESET}    ${C_DIM}wine binary (default newest GE-Proton, else system wine)${C_RESET}
@@ -59,6 +60,7 @@ ${C_ACCENT}${C_BOLD}examples${C_RESET}
 ${C_WHITE}${C_BOLD}   play.sh game.exe${C_RESET}
 ${C_WHITE}${C_BOLD}   play.sh game.exe Bep -windowed${C_RESET}
 ${C_WHITE}${C_BOLD}   play.sh game.exe hud${C_RESET}
+${C_WHITE}${C_BOLD}   play.sh game.exe Bep hud${C_RESET}${C_DIM}   modes combine (mod + HUD)${C_RESET}
 ${C_WHITE}${C_BOLD}   play.sh game.exe MangoHud${C_RESET}
 ${C_WHITE}${C_BOLD}   play.sh hud${C_RESET}${C_DIM}      standalone HUD (no game)${C_RESET}
 EOF
@@ -78,8 +80,9 @@ if { [ "$GAME" = "hud" ] || [ "$GAME" = "--hud" ]; } && [ $# -eq 1 ]; then
   fi
 fi
 if [ -z "$GAME" ]; then
-  echo "usage: play.sh /path/to/game.exe [mode] [game-args...]"
+  echo "usage: play.sh /path/to/game.exe [modes...] [game-args...]"
   echo "modes: Bep (BepInEx), hud (HUD overlay), MangoHud (overlay + log)"
+  echo "       modes combine, e.g. 'play game.exe Bep hud'"
   echo "       play.sh hud - standalone HUD (no game)"
   exit 1
 fi
@@ -113,24 +116,28 @@ ensure_fps_layer() {
 }
 
 HUD=0
-MODE="${1:-}"
-case "$MODE" in
-  Bep|bep|bepinex)
-    shift
-    export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}winhttp=n,b"
-    ;;
-  hud|Hud|hmntr)
-    shift
-    HUD=1
-    ensure_fps_layer
-    ;;
-  MangoHud|mangohud)
-    shift
-    export MANGOHUD=1
-    export MANGOHUD_CONFIG="${MANGOHUD_CONFIG:+$MANGOHUD_CONFIG,}autostart_log=1,output_folder=/tmp/play,log_interval=100,log_duration=0"
-    mkdir -p /tmp/play
-    ;;
-esac
+while [ $# -gt 0 ]; do
+  case "$1" in
+    Bep|bep|bepinex)
+      shift
+      export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}winhttp=n,b"
+      ;;
+    hud|Hud|hmntr)
+      shift
+      HUD=1
+      ensure_fps_layer
+      ;;
+    MangoHud|mangohud)
+      shift
+      export MANGOHUD=1
+      export MANGOHUD_CONFIG="${MANGOHUD_CONFIG:+$MANGOHUD_CONFIG,}autostart_log=1,output_folder=/tmp/play,log_interval=100,log_duration=0"
+      mkdir -p /tmp/play
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 
 detect_gpu() {
   command -v vulkaninfo >/dev/null 2>&1 || return 1
@@ -172,10 +179,10 @@ if [ "$HUD" -eq 1 ]; then
     "$HUD_BIN" &
     HUD_PID=$!
     cleanup_hud() { kill "$HUD_PID" 2>/dev/null; }
-    trap cleanup_hud EXIT INT TERM
+    trap 'exit' INT TERM
+    trap cleanup_hud EXIT
     "$WINE_BIN" "$GAME" "$@"
     rc=$?
-    trap - EXIT INT TERM
     exit "$rc"
   else
     echo "play: hud not found/executable at $HUD_BIN - running game without HUD" >&2
