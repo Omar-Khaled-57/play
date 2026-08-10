@@ -15,7 +15,7 @@
 #   HUD options (env): HMNTR_METERS, HMNTR_INTERVAL, HMNTR_OPACITY
 set -u
 
-VERSION="0.2"
+VERSION="0.3"
 
 C_RESET="$(tput sgr0 2>/dev/null)"
 C_BOLD="$(tput bold 2>/dev/null)"
@@ -28,6 +28,8 @@ C_ACCENT="$(tput setaf 12 2>/dev/null)"
 
 CONFIG="${PLAY_CONFIG:-$HOME/.config/play/config}"
 [ -f "$CONFIG" ] && . "$CONFIG"
+
+PLAY_DIR="$(dirname "$(readlink -f "$0")")"
 
 help() {
   cat <<EOF
@@ -48,7 +50,7 @@ ${C_WHITE}${C_BOLD}   hud${C_RESET}     ${C_DIM}translucent HUD overlay (FPS fro
 ${C_WHITE}${C_BOLD}   MangoHud${C_RESET}${C_DIM} MangoHud overlay + FPS log (needs: sudo apt install mangohud)${C_RESET}
 
 ${C_ACCENT}${C_BOLD}config${C_RESET}  ${C_GRAY}${PLAY_CONFIG:-~/.config/play/config}${C_RESET}
-${C_WHITE}   WINE_BIN${C_RESET}    ${C_DIM}wine binary (default GE-Proton)${C_RESET}
+${C_WHITE}   WINE_BIN${C_RESET}    ${C_DIM}wine binary (default newest GE-Proton, else system wine)${C_RESET}
 ${C_WHITE}   GPU_NAME${C_RESET}    ${C_DIM}DXVK device filter (auto-detected)${C_RESET}
 ${C_WHITE}   WINEPREFIX${C_RESET}  ${C_DIM}wine prefix (default ~/.wine)${C_RESET}
 ${C_WHITE}   HMNTR_*${C_RESET}     ${C_DIM}HUD options: METERS / INTERVAL / OPACITY (see README)${C_RESET}
@@ -58,6 +60,7 @@ ${C_WHITE}${C_BOLD}   play.sh game.exe${C_RESET}
 ${C_WHITE}${C_BOLD}   play.sh game.exe Bep -windowed${C_RESET}
 ${C_WHITE}${C_BOLD}   play.sh game.exe hud${C_RESET}
 ${C_WHITE}${C_BOLD}   play.sh game.exe MangoHud${C_RESET}
+${C_WHITE}${C_BOLD}   play.sh hud${C_RESET}${C_DIM}      standalone HUD (no game)${C_RESET}
 EOF
   exit 0
 }
@@ -66,9 +69,18 @@ GAME="${1:-}"
 case "$GAME" in
   -h|--help) help ;;
 esac
+if { [ "$GAME" = "hud" ] || [ "$GAME" = "--hud" ]; } && [ $# -eq 1 ]; then
+  if [ -x "$PLAY_DIR/hud" ]; then
+    exec "$PLAY_DIR/hud"
+  else
+    echo "play: hud not found at $PLAY_DIR/hud" >&2
+    exit 1
+  fi
+fi
 if [ -z "$GAME" ]; then
   echo "usage: play.sh /path/to/game.exe [mode] [game-args...]"
   echo "modes: Bep (BepInEx), hud (HUD overlay), MangoHud (overlay + log)"
+  echo "       play.sh hud - standalone HUD (no game)"
   exit 1
 fi
 if [ ! -f "$GAME" ]; then
@@ -78,13 +90,16 @@ fi
 GAME="$(readlink -f "$GAME")"
 shift
 
-PLAY_DIR="$(dirname "$(readlink -f "$0")")"
 FPS_LAYER_SRC="$PLAY_DIR/fpslayer"
 FPS_LAYER_DIR="${PLAY_CACHE_DIR:-$HOME/.cache/play}/fpslayer"
 
 ensure_fps_layer() {
   command -v gcc >/dev/null 2>&1 || { echo "play: gcc not found - HUD FPS disabled" >&2; return 1; }
   mkdir -p "$FPS_LAYER_DIR" /tmp/play
+  if ! printf '#include <vulkan/vulkan.h>\n#include <vulkan/vk_layer.h>\n' | gcc -x c -fsyntax-only - >/dev/null 2>&1; then
+    echo "play: Vulkan headers not found - HUD FPS disabled" >&2
+    return 1
+  fi
   if [ ! -f "$FPS_LAYER_DIR/play_fps.so" ] || [ "$FPS_LAYER_SRC/play_fps.c" -nt "$FPS_LAYER_DIR/play_fps.so" ]; then
     if ! gcc -shared -fPIC -O2 -o "$FPS_LAYER_DIR/play_fps.so" "$FPS_LAYER_SRC/play_fps.c" -lpthread 2>"$FPS_LAYER_DIR/build.log"; then
       echo "play: FPS layer build failed (see $FPS_LAYER_DIR/build.log)" >&2
@@ -94,7 +109,7 @@ ensure_fps_layer() {
   cp "$FPS_LAYER_SRC/play_fps.json" "$FPS_LAYER_DIR/" 2>/dev/null
   export VK_LAYER_PATH="$FPS_LAYER_DIR"
   export VK_INSTANCE_LAYERS="${VK_INSTANCE_LAYERS:+$VK_INSTANCE_LAYERS:}VK_LAYER_PLAY_fps"
-  export PLAY_FPS_FILE="${PLAY_FPS_FILE:-/tmp/play/fps.txt}"
+  export PLAY_FPS_FILE="${PLAY_FPS_FILE:-/tmp/play/fps-$(basename "$GAME").txt}"
 }
 
 HUD=0
@@ -127,19 +142,27 @@ detect_gpu() {
 }
 
 export WINEPREFIX="${WINEPREFIX:-$HOME/.wine}"
-export __NV_PRIME_RENDER_OFFLOAD=1
-export __GLX_VENDOR_LIBRARY_NAME=nvidia
 if [ -n "${GPU_NAME:-}" ]; then
+  GPU_ACTIVE="$GPU_NAME"
   export DXVK_FILTER_DEVICE_NAME="$GPU_NAME"
 else
-  AUTO_GPU="$(detect_gpu)"
-  [ -n "$AUTO_GPU" ] && export DXVK_FILTER_DEVICE_NAME="$AUTO_GPU"
+  GPU_ACTIVE="$(detect_gpu)"
+  [ -n "$GPU_ACTIVE" ] && export DXVK_FILTER_DEVICE_NAME="$GPU_ACTIVE"
 fi
+case "$GPU_ACTIVE" in
+  *NVIDIA*|*nvidia*)
+    export __NV_PRIME_RENDER_OFFLOAD=1
+    export __GLX_VENDOR_LIBRARY_NAME=nvidia
+    ;;
+esac
 export WINEESYNC=1
 export WINEFSYNC=1
 
-WINE_BIN="${WINE_BIN:-$HOME/.local/share/GE-Proton11-3/files/bin/wine}"
-[ -x "$WINE_BIN" ] || WINE_BIN="$(command -v wine)"
+WINE_BIN="${WINE_BIN:-}"
+if [ -z "$WINE_BIN" ]; then
+  WINE_BIN="$(ls -d "$HOME"/.local/share/GE-Proton*/files/bin/wine 2>/dev/null | sort -V | tail -n 1)"
+  [ -x "$WINE_BIN" ] || WINE_BIN="$(command -v wine)"
+fi
 
 cd "$(dirname "$GAME")" || exit 1
 
@@ -154,6 +177,8 @@ if [ "$HUD" -eq 1 ]; then
     rc=$?
     trap - EXIT INT TERM
     exit "$rc"
+  else
+    echo "play: hud not found/executable at $HUD_BIN - running game without HUD" >&2
   fi
 fi
 exec "$WINE_BIN" "$GAME" "$@"

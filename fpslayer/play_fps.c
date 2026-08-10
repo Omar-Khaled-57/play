@@ -25,6 +25,8 @@
 #define MAX_DEVICES 16
 
 static PFN_vkGetInstanceProcAddr g_next_gipa = NULL;
+static PFN_vkGetDeviceProcAddr g_fallback_gdpa = NULL;
+static PFN_vkQueuePresentKHR g_fallback_present = NULL;
 
 static _Atomic uint64_t g_presents = 0;
 static _Atomic int g_writer_running = 0;
@@ -141,6 +143,8 @@ play_fps_CreateDevice(VkPhysicalDevice physicalDevice,
         n->gdpa = next_gdpa;
         n->present = (PFN_vkQueuePresentKHR)next_gdpa(*pDevice, "vkQueuePresentKHR");
     }
+    g_fallback_gdpa = next_gdpa;
+    g_fallback_present = (PFN_vkQueuePresentKHR)next_gdpa(*pDevice, "vkQueuePresentKHR");
     start_writer();
     return res;
 }
@@ -154,6 +158,8 @@ play_fps_PresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
     VkResult res;
     if (n && n->present)
         res = n->present(queue, pPresentInfo);
+    else if (g_fallback_present)
+        res = g_fallback_present(queue, pPresentInfo);
     else
         res = VK_ERROR_DEVICE_LOST;
     if (res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR)
@@ -197,5 +203,7 @@ vkGetDeviceProcAddr(VkDevice device, const char *pName) {
     }
     if (n && n->gdpa)
         return n->gdpa(device, pName);
+    if (g_fallback_gdpa)
+        return g_fallback_gdpa(device, pName);
     return NULL;
 }

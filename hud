@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """hud - translucent HUD overlay. Backend for: play <game> hud.
 
-Shows a small always-on-top overlay in the bottom-right corner with live
-system stats. Left-drag to move it, scroll wheel to change opacity,
-right-click to quit.
+Shows a small always-on-top overlay in the top-right corner with live system
+stats. Scroll wheel changes opacity, right-click quits. Run standalone for
+general machine monitoring with: play hud (or play --hud).
 
 FPS comes from play's own Vulkan layer (see fpslayer/), which writes the
 frame rate to PLAY_FPS_FILE (default /tmp/play/fps.txt) - no MangoHud.
@@ -125,10 +125,9 @@ def fps():
 
 def overlay(Gtk, Gdk, GLib, Pango, meters, interval, opacity):
     state = State()
-    margin = 36
+    margin = 12
     pad_x, pad_y = 14, 8
     op = {"v": max(0.35, min(1.0, opacity))}
-    drag = {"on": False, "dx": 0.0, "dy": 0.0, "px": 0, "py": 0}
     markup = [""]
 
     win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
@@ -209,11 +208,10 @@ def overlay(Gtk, Gdk, GLib, Pango, meters, interval, opacity):
     def place(tw, th):
         screen = win.get_screen()
         sw = screen.get_width()
-        sh = screen.get_height()
         w = min(tw + 2 * pad_x, max(sw - 2 * margin, 1))
         h = th + 2 * pad_y
         win.resize(w, h)
-        win.move(sw - w - margin, sh - h - margin)
+        win.move(sw - w - margin, margin)
 
     def tick():
         markup[0] = build_markup()
@@ -229,28 +227,7 @@ def overlay(Gtk, Gdk, GLib, Pango, meters, interval, opacity):
         if ev.button == 3:
             Gtk.main_quit()
             return True
-        if ev.button == 1:
-            drag["on"] = True
-            drag["dx"] = ev.x
-            drag["dy"] = ev.y
-            drag["px"], drag["py"] = win.get_position()
-            return True
         return False
-
-    def on_release(w, ev):
-        if ev.button == 1:
-            drag["on"] = False
-        return False
-
-    def on_motion(w, ev):
-        if not drag["on"]:
-            return False
-        win.move(drag["px"] + int(ev.x - drag["dx"]),
-                 drag["py"] + int(ev.y - drag["dy"]))
-        px, py = win.get_position()
-        drag["px"], drag["py"] = px, py
-        drag["dx"], drag["dy"] = ev.x, ev.y
-        return True
 
     def on_scroll(w, ev):
         if ev.direction == Gdk.ScrollDirection.UP:
@@ -260,13 +237,9 @@ def overlay(Gtk, Gdk, GLib, Pango, meters, interval, opacity):
         apply_css()
         return True
 
-    win.add_events(Gdk.EventMask.POINTER_MOTION_MASK
-                   | Gdk.EventMask.BUTTON_PRESS_MASK
-                   | Gdk.EventMask.BUTTON_RELEASE_MASK
+    win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK
                    | Gdk.EventMask.SCROLL_MASK)
     win.connect("button-press-event", on_press)
-    win.connect("button-release-event", on_release)
-    win.connect("motion-notify-event", on_motion)
     win.connect("scroll-event", on_scroll)
 
     def _quit(*_a):

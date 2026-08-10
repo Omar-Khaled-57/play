@@ -1,6 +1,7 @@
 # play.sh config — copy to ~/.config/play/config and edit
 
-# Wine binary to use. Default: GE-Proton (download from
+# Wine binary to use. Default: newest GE-Proton in ~/.local/share, else
+# system wine (download GE-Proton from
 # https://github.com/GloriousEggroll/proton-ge-custom/releases)
 #WINE_BIN="$HOME/.local/share/GE-Proton11-3/files/bin/wine"
 
