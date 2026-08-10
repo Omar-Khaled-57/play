@@ -1,101 +1,219 @@
+<p align="center">
+  <img src="typo.png" alt="play" width="480">
+</p>
+
 # play
 
-Run Windows games on Linux via Wine + DXVK, favouring your discrete GPU,
-with an optional translucent HUD overlay.
+A simple launcher that runs Windows games on Linux via **Wine + DXVK**, always
+favouring your discrete GPU, with an optional translucent **HUD overlay** that
+shows live system stats and FPS.
+
+## Features
+
+- Launch any Windows `.exe` with Wine + DXVK, automatically picking your
+  discrete GPU (NVIDIA optimisations are only applied on NVIDIA hardware).
+- Combine multiple modes in one command: `play game.exe Bep hud`.
+- HUD overlay pinned to the top-right corner with CPU / GPU / RAM / temp / FPS
+  — no MangoHud needed for FPS (it uses its own Vulkan layer).
+- Standalone `play hud` mode turns the overlay into a plain system monitor.
+- BepInEx mod loader support (one keyword).
+- MangoHud overlay + FPS logging as an alternative.
 
 ## Requirements
 
-- Wine with Vulkan support (GE-Proton recommended)
-- DXVK installed in your Wine prefix
-- Vulkan drivers for your GPU
-- `gcc` + Vulkan headers (`vulkan/vulkan.h`) — only needed to build the
-  HUD's FPS layer on first use
-- python3-gi (GTK3) — for the `hud` overlay
-- Optional: `mangohud` for the MangoHud mode (`sudo apt install mangohud`)
+| What | Why |
+|---|---|
+| Wine with Vulkan support (GE-Proton recommended) | runs the game |
+| DXVK installed in your Wine prefix | translates Direct3D to Vulkan |
+| Vulkan drivers for your GPU | needed by DXVK |
+| `gcc` + Vulkan headers (`vulkan/vulkan.h`) | build the HUD's FPS layer on first use |
+| python3-gi (GTK3) | the `hud` overlay |
+| `mangohud` *(optional)* | only for the `MangoHud` mode: `sudo apt install mangohud` |
 
 ## Install
+
+1. Clone or copy the `play` folder anywhere.
+2. Link the launcher into your PATH:
 
 ```bash
 sudo ln -s "$(pwd)/play.sh" /usr/local/bin/play
 ```
 
-## Usage
+Now you can run `play` from anywhere.
+
+## Quick start
 
 ```bash
-play "/path/to/game.exe"            # launch a game
-play "/path/to/game.exe" Bep        # launch with BepInEx mod loader
-play "/path/to/game.exe" hud        # launch with the translucent HUD overlay
-play "/path/to/game.exe" Bep hud    # combine modes: mod loader + HUD
-play "/path/to/game.exe" MangoHud   # launch with MangoHud overlay + FPS log
-play hud                           # standalone HUD, no game (system monitor)
-play "/path/to/game.exe" Bep -windowed   # extra args pass through to the game
+play "/path/to/game.exe"           # just run the game
+play "/path/to/game.exe" hud       # run the game + HUD overlay
+play hud                           # HUD overlay only (system monitor)
+play --help                        # show help with the banner
 ```
 
-`play hud` (or `play --hud`) runs just the overlay for general reading of the
-machine — no game, keeps running until right-clicked or Ctrl-C'd.
+That's it. The first time you use `hud`, the FPS Vulkan layer is compiled
+automatically (you'll see a message if `gcc` or the Vulkan headers are
+missing — the game still runs, just without the FPS meter).
 
-Modes combine in any order: `play game.exe Bep hud` enables the BepInEx loader
-**and** the HUD overlay. Anything that isn't a mode is passed to the game as
-an argument.
+## Usage
+
+```
+play /path/to/game.exe [modes...] [game-args...]
+```
+
+Everything after the game path is read left to right: any token that is a mode
+name is applied, and the first token that isn't a mode ends the mode list —
+everything after it is passed straight to the game.
 
 ### Modes
 
 | Mode | Effect |
 |---|---|
-| `Bep` | Sets `WINEDLLOVERRIDES=winhttp=n,b` for BepInEx mods |
-| `hud` | Shows a translucent always-on-top HUD overlay with system stats + FPS |
+| `Bep` | Enables the BepInEx mod loader (`WINEDLLOVERRIDES=winhttp=n,b`) |
+| `hud` | Shows the translucent always-on-top HUD overlay with stats + FPS |
 | `MangoHud` | Runs MangoHud's in-game overlay and logs FPS to `/tmp/play` |
 
-Multiple modes combine in any order (`play game.exe Bep hud`); other
-arguments are passed through to the game.
+### Combining modes
 
-## hud — translucent HUD overlay
+Modes combine in any order, so one command can do several things:
 
-`play <game> hud` launches the game plus a small always-on-top overlay pinned
-to the top-right corner (self-updating, no screen clearing):
+```bash
+play ULTRAKILL.exe Bep hud          # BepInEx + HUD overlay
+play game.exe MangoHud Bep          # MangoHud + BepInEx (order doesn't matter)
+play game.exe Bep -windowed         # BepInEx, then pass -windowed to the game
+```
+
+Note: a mode placed *after* a game argument is treated as a game argument
+(modes must come right after the game path).
+
+### Standalone HUD
+
+```bash
+play hud
+play --hud                          # same thing
+```
+
+Runs only the overlay as a general machine monitor — no game. It keeps
+running until you right-click it or press Ctrl-C.
+
+## The HUD overlay
+
+`play <game> hud` launches the game and, at the same time, a small
+always-on-top overlay pinned to the **top-right corner** of your screen:
 
 ```text
 CPU 34%  GPU 0% 48C  RAM 11G/14G  TMP 65C  FPS 60
 ```
 
-- **Scroll wheel** changes opacity, **right-click** quits.
-- **FPS is independent of MangoHud**: `play` builds a tiny Vulkan layer
-  (`fpslayer/`) that counts presented frames and writes the rate to
-  `/tmp/play/fps-<game>.txt`. No MangoHud needed for FPS in `hud` mode.
-  (The FPS meter only appears for Vulkan games.)
-- On a Wayland-only session (no `DISPLAY`) the overlay cannot position itself,
-  so it appears where the compositor places it instead of top-right.
+### Controls
 
-The overlay is a Python GTK3 app (`hud`); python3-gi is required.
+- **Scroll wheel** — change overlay opacity.
+- **Right-click** — close the overlay and quit (`play hud` standalone mode).
+- The overlay is not draggable by design.
+- When launched with a game, the overlay **closes automatically when the game
+  exits** (including Ctrl-C).
 
-HUD options (environment):
+### What it shows
+
+Meters shown by default: `cpu gpu ram fps cputemp`. Values turn yellow above
+70% and red above 90%; temperatures yellow above 65C and red above 80C. Meters
+with no data yet (e.g. FPS before the game presents its first frame, or GPU
+temp without `nvidia-smi`) are hidden until they become available.
+
+### How FPS works (no MangoHud required)
+
+`play` builds a tiny Vulkan instance layer (`fpslayer/play_fps.c`) that counts
+presented frames and writes the rate to a file. The HUD reads that file.
+
+- FPS appears only for **Vulkan** games (which DXVK games are).
+- The FPS file defaults to `/tmp/play/fps-<game>.txt` (one per game).
+
+### HUD options (environment variables)
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `HMNTR_METERS` | `cpu gpu ram fps cputemp` | meters to show |
-| `HMNTR_INTERVAL` | `1` | refresh seconds |
-| `HMNTR_OPACITY` | `0.75` | initial overlay opacity |
+| `HMNTR_METERS` | `cpu gpu ram fps cputemp` | space-separated meters to show |
+| `HMNTR_INTERVAL` | `1` | refresh interval in seconds |
+| `HMNTR_OPACITY` | `0.75` | initial overlay opacity (0.35 – 1.0) |
 | `PLAY_FPS_FILE` | `/tmp/play/fps-<game>.txt` | FPS file written by the play layer |
 
-Values turn yellow above 70% and red above 90%; temps yellow above 65C and
-red above 80C. Meters with no data (e.g. FPS before the game presents a
-frame, or GPU temp without nvidia-smi) are hidden until available.
+Example:
 
-## Config
+```bash
+HMNTR_INTERVAL=2 HMNTR_OPACITY=0.9 play game.exe hud
+```
 
-Optional config file at `~/.config/play/config` (see `config.example`):
+### Notes / limitations
+
+- On a **Wayland-only** session (no `DISPLAY`), the overlay can't position
+  itself, so it appears where the compositor places it instead of top-right.
+- The overlay is a Python GTK3 app; it needs `python3-gi` (GTK3) and an X11 /
+  XWayland display.
+
+## MangoHud mode
+
+```bash
+play game.exe MangoHud
+```
+
+Runs the game with MangoHud's in-game overlay and writes an FPS log to
+`/tmp/play` (`autostart_log=1`, 100 ms interval). Requires `mangohud`
+installed. This is an alternative to the `hud` overlay, not a replacement —
+you can even use both at once.
+
+## Configuration
+
+Optional config file at `~/.config/play/config` (a template is in
+`config.example`). Copy it and edit:
+
+```bash
+cp config.example ~/.config/play/config
+```
+
+All variables are optional; defaults are automatic.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WINE_BIN` | newest GE-Proton in `~/.local/share`, else system `wine` | the wine binary to use |
+| `GPU_NAME` | auto-detected discrete GPU | DXVK device filter |
+| `WINEPREFIX` | `~/.wine` | Wine prefix to use |
+
+Example:
 
 ```bash
 WINE_BIN="$HOME/.local/share/GE-Proton11-3/files/bin/wine"
-GPU_NAME="NVIDIA GeForce MX130"   # auto-detected if unset
+GPU_NAME="NVIDIA GeForce MX130"
 WINEPREFIX="$HOME/.wine"
 ```
 
-If `WINE_BIN` is unset, the newest GE-Proton in `~/.local/share` is used,
-falling back to the system `wine`. The discrete GPU is auto-detected from
-`vulkaninfo` when `GPU_NAME` is unset; NVIDIA-only optimisations
-(`__NV_PRIME_RENDER_OFFLOAD`, `__GLX_VENDOR_LIBRARY_NAME`) are applied only
-when an NVIDIA GPU is detected, so AMD/Intel machines are unaffected.
+Notes:
+
+- If `WINE_BIN` is unset, the newest GE-Proton in `~/.local/share` is used
+  (`GE-Proton*/files/bin/wine`), falling back to the system `wine`.
+- The discrete GPU is auto-detected from `vulkaninfo` when `GPU_NAME` is
+  unset. NVIDIA-only optimisations (`__NV_PRIME_RENDER_OFFLOAD`,
+  `__GLX_VENDOR_LIBRARY_NAME`) are applied only when an NVIDIA GPU is
+  detected, so AMD/Intel machines are unaffected.
+- HUD options (`HMNTR_*`, `PLAY_FPS_FILE`) can also be set here or as
+  environment variables.
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| "hud not found" | `play` looks for `hud` next to `play.sh` — make sure the whole `play` folder is intact and the file is executable. |
+| No FPS in the HUD | `gcc` or Vulkan headers missing → install them (e.g. `sudo apt install gcc libvulkan-dev`). FPS only shows for Vulkan games. |
+| HUD not in the corner | You're on Wayland without XWayland/`DISPLAY` — see *Notes* above. |
+| `MangoHud` does nothing | `sudo apt install mangohud`. |
+| Wrong GPU being used | Set `GPU_NAME` in the config, or install Vulkan drivers for the discrete GPU. |
+| Overlay too transparent / bright | Scroll the wheel, or set `HMNTR_OPACITY`. |
+
+## Uninstall
+
+```bash
+sudo rm /usr/local/bin/play
+rm -rf ~/.cache/play   # removes the compiled FPS layer
+rm -rf ~/.config/play  # removes the config file (optional)
+```
 
 ## License
 

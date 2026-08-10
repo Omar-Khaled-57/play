@@ -33,6 +33,7 @@ PLAY_DIR="$(dirname "$(readlink -f "$0")")"
 
 help() {
   cat <<EOF
+
 ${C_ACCENT}   ✦ play ${C_GRAY}v$VERSION${C_RESET}
 ${C_GRAY}   ─────────────────────────────────────${C_RESET}
 
