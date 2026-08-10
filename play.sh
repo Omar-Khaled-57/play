@@ -15,7 +15,7 @@
 #   HUD options (env): HMNTR_METERS, HMNTR_INTERVAL, HMNTR_OPACITY
 set -u
 
-VERSION="0.4"
+VERSION="0.8.0"
 
 C_RESET="$(tput sgr0 2>/dev/null)"
 C_BOLD="$(tput bold 2>/dev/null)"
@@ -78,6 +78,7 @@ EOF
 GAME="${1:-}"
 case "$GAME" in
   -h|--help) help ;;
+  -v|--version) echo "play $VERSION"; exit 0 ;;
 esac
 if { [ "$GAME" = "hud" ] || [ "$GAME" = "--hud" ]; } && [ $# -eq 1 ]; then
   if [ -x "$PLAY_DIR/hud" ]; then

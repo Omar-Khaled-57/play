@@ -32,14 +32,31 @@ shows live system stats and FPS.
 
 ## Install
 
-1. Clone or copy the `play` folder anywhere.
-2. Link the launcher into your PATH:
+**Recommended** — one-liner (installs to `~/.local/share/play` and links
+`play` into `~/.local/bin`, no sudo):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Omar-Khaled-57/play/main/install.sh | bash
+```
+
+To install a specific release instead of the latest:
+
+```bash
+PLAY_VERSION=v0.8.0 curl -fsSL https://raw.githubusercontent.com/Omar-Khaled-57/play/main/install.sh | bash
+```
+
+The installer downloads the release archive from GitHub, so it never mixes
+old and new files — re-run it any time to update.
+
+**Manual** — clone or copy the `play` folder and symlink the launcher:
 
 ```bash
 sudo ln -s "$(pwd)/play.sh" /usr/local/bin/play
 ```
 
-Now you can run `play` from anywhere.
+After installing, `~/.local/bin` is added to your `PATH` in `~/.bashrc` the
+first time (or use `PLAY_BIN_DIR` to pick a directory already on your PATH).
+Restart your shell, then verify with `play --version`.
 
 ## Quick start
 
@@ -210,10 +227,14 @@ Notes:
 ## Uninstall
 
 ```bash
-sudo rm /usr/local/bin/play
-rm -rf ~/.cache/play   # removes the compiled FPS layer
-rm -rf ~/.config/play  # removes the config file (optional)
+rm -f ~/.local/bin/play               # remove the launcher symlink
+rm -rf ~/.local/share/play            # remove the program
+rm -rf ~/.cache/play                  # remove the compiled FPS layer
+rm -rf ~/.config/play                 # remove the config file (optional)
 ```
+
+Then remove the `# play launcher` PATH line from `~/.bashrc` if you don't want
+`~/.local/bin` anymore.
 
 ## License
 
