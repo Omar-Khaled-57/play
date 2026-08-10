@@ -32,15 +32,20 @@ CONFIG="${PLAY_CONFIG:-$HOME/.config/play/config}"
 PLAY_DIR="$(dirname "$(readlink -f "$0")")"
 
 help() {
+  if [ -f "$PLAY_DIR/typo.sh" ]; then
+    bash "$PLAY_DIR/typo.sh" | sed 's/^/   /'
+  else
+    printf '%s\n' \
+      '   ████ █     ██  █  █' \
+      '   █  █ █    █  █ █  █' \
+      '   ████ █    ████  ██' \
+      '   █    █    █  █  █' \
+      '   █    ████ █  █  █'
+  fi
   cat <<EOF
+
 ${C_ACCENT}   ✦ play ${C_GRAY}v$VERSION${C_RESET}
 ${C_GRAY}   ─────────────────────────────────────${C_RESET}
-
-${C_WHITE}${C_BOLD}   ████ █     ██  █  █
-   █  █ █    █  █ █  █
-   ████ █    ████  ██
-   █    █    █  █  █
-   █    ████ █  █  █${C_RESET}
 
 ${C_ACCENT}${C_BOLD}usage${C_RESET}   ${C_GRAY}play.sh /path/to/game.exe [modes...] [game-args...]${C_RESET}
 
