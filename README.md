@@ -2,7 +2,7 @@
   <img src="typo.png" alt="play" width="480">
 </p>
 
-# play
+---
 
 A simple launcher that runs Windows games on Linux via **Wine + DXVK**, always
 favouring your discrete GPU, with an optional translucent **HUD overlay** that
