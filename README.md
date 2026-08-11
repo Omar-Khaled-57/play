@@ -13,7 +13,7 @@ shows live system stats and FPS.
 - Launch any Windows `.exe` with Wine + DXVK, automatically picking your
   discrete GPU (NVIDIA optimisations are only applied on NVIDIA hardware).
 - Combine multiple modes in one command: `play game.exe Bep hud`.
-- HUD overlay pinned to the top-right corner with CPU / GPU / RAM / temp / FPS
+- HUD overlay pinned to the top-right corner with CPU / GPU / RAM / FPS
   — no MangoHud needed for FPS (it uses its own Vulkan layer).
 - Standalone `play hud` mode turns the overlay into a plain system monitor.
 - BepInEx mod loader support (one keyword).
@@ -42,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/Omar-Khaled-57/play/main/install.sh
 To install a specific release instead of the latest:
 
 ```bash
-PLAY_VERSION=v0.8.0 curl -fsSL https://raw.githubusercontent.com/Omar-Khaled-57/play/main/install.sh | bash
+PLAY_VERSION=v0.8.1 curl -fsSL https://raw.githubusercontent.com/Omar-Khaled-57/play/main/install.sh | bash
 ```
 
 The installer downloads the release archive from GitHub, so it never mixes
@@ -118,23 +118,23 @@ running until you right-click it or press Ctrl-C.
 always-on-top overlay pinned to the **top-right corner** of your screen:
 
 ```text
-CPU 34%  GPU 0% 48C  RAM 11G/14G  TMP 65C  FPS 60
+CPU 40% 50C  GPU 40% 44C  RAM 8/40GB  FPS 60
 ```
 
 ### Controls
 
 - **Scroll wheel** — change overlay opacity.
 - **Right-click** — close the overlay and quit (`play hud` standalone mode).
-- The overlay is not draggable by design.
+- **Left-click + drag** — move the overlay anywhere; it stays where you put it.
 - When launched with a game, the overlay **closes automatically when the game
   exits** (including Ctrl-C).
 
 ### What it shows
 
-Meters shown by default: `cpu gpu ram fps cputemp`. Values turn yellow above
-70% and red above 90%; temperatures yellow above 65C and red above 80C. Meters
-with no data yet (e.g. FPS before the game presents its first frame, or GPU
-temp without `nvidia-smi`) are hidden until they become available.
+Meters shown by default: `cpu gpu ram fps`. Values turn yellow above 70% and
+red above 90%; temperatures yellow above 65C and red above 80C. Meters with no
+data yet (e.g. FPS before the game presents its first frame, or GPU temp
+without `nvidia-smi`) are hidden until they become available.
 
 ### How FPS works (no MangoHud required)
 
@@ -148,7 +148,7 @@ presented frames and writes the rate to a file. The HUD reads that file.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `HMNTR_METERS` | `cpu gpu ram fps cputemp` | space-separated meters to show |
+| `HMNTR_METERS` | `cpu gpu ram fps` | space-separated meters to show |
 | `HMNTR_INTERVAL` | `1` | refresh interval in seconds |
 | `HMNTR_OPACITY` | `0.75` | initial overlay opacity (0.35 – 1.0) |
 | `PLAY_FPS_FILE` | `/tmp/play/fps-<game>.txt` | FPS file written by the play layer |
