@@ -289,6 +289,29 @@ def _parse_float(s, default, lo, hi):
     return max(lo, min(hi, v))
 
 
+def gi_pkg_hint():
+    """Print the right python3-gi / GTK3 install command for this distro
+    (Ubuntu: apt, Fedora: dnf)."""
+    pkg = "sudo apt install python3-gi gir1.2-gtk-3.0"
+    try:
+        with open("/etc/os-release") as f:
+            data = f.read()
+    except OSError:
+        return pkg
+    ident = ""
+    for line in data.splitlines():
+        if line.startswith("ID="):
+            ident = line.split("=", 1)[1].strip().strip('"')
+            break
+    if ident in ("fedora", "rhel", "centos", "rocky", "alma"):
+        return "sudo dnf install python3-gobject gtk3"
+    if ident in ("arch", "manjaro", "endeavouros"):
+        return "sudo pacman -S python3-gobject gtk3"
+    if ident.startswith("opensuse"):
+        return "sudo zypper install python3-gobject gtk3"
+    return pkg
+
+
 def main():
     meters = (os.environ.get("HMNTR_METERS") or "cpu gpu ram fps").split()
     unknown = [m for m in meters if m not in ("cpu", "gpu", "ram", "fps")]
@@ -326,6 +349,7 @@ def main():
         from gi.repository import Gtk, Gdk, GLib
     except (ImportError, ValueError) as e:
         print("hud: python3-gi (GTK3) required for the HUD: %s" % e, file=sys.stderr)
+        print("hud: install it with: %s" % gi_pkg_hint(), file=sys.stderr)
         return 1
 
     try:

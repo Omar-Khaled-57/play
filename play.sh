@@ -5,7 +5,7 @@
 # Modes (any number, any order):
 #   Bep|bep|bepinex    BepInEx mod loader (winhttp=n,b)
 #   hud|Hud|hmntr      translucent HUD overlay (FPS from play's own Vulkan layer)
-#   MangoHud|mangohud  MangoHud overlay + FPS log (needs: sudo apt install mangohud)
+#   MangoHud|mangohud  MangoHud overlay + FPS log (needs: mangohud package)
 #
 # Config (optional, sourced if present):
 #   $PLAY_CONFIG  or  ~/.config/play/config
@@ -15,7 +15,7 @@
 #   HUD options (env): HMNTR_METERS, HMNTR_INTERVAL, HMNTR_OPACITY
 set -u
 
-VERSION="0.8.1"
+VERSION="0.9.0"
 
 C_RESET="$(tput sgr0 2>/dev/null)"
 C_BOLD="$(tput bold 2>/dev/null)"
@@ -30,6 +30,43 @@ CONFIG="${PLAY_CONFIG:-$HOME/.config/play/config}"
 [ -f "$CONFIG" ] && . "$CONFIG"
 
 PLAY_DIR="$(dirname "$(readlink -f "$0")")"
+
+# Distro-aware package hints. play is developed on Ubuntu but supports Fedora
+# (dnf), Arch (pacman) and openSUSE (zypper) out of the box.
+pkg_mgr() {
+  if [ -r /etc/os-release ]; then
+    case "$(sed -n 's/^ID=//p' /etc/os-release | tr -d '"')" in
+      fedora|rhel|centos|rocky|alma) echo dnf ;;
+      arch|manjaro|endeavouros) echo pacman ;;
+      opensuse*|suse) echo zypper ;;
+      *) echo apt ;;
+    esac
+  else
+    echo apt
+  fi
+}
+pkg_name() { # debian-style package name -> this distro's name
+  case "$(pkg_mgr)" in
+    dnf|pacman)
+      case "$1" in
+        libvulkan-dev) echo vulkan-headers ;;
+        python3-gi) echo python3-gobject ;;
+        gir1.2-gtk-3.0) echo gtk3 ;;
+        *) echo "$1" ;;
+      esac ;;
+    *) echo "$1" ;;
+  esac
+}
+pkg_hint() { # echo the install command for the given deps
+  local pkgs p
+  for p in "$@"; do pkgs="${pkgs:+$pkgs }$(pkg_name "$p")"; done
+  case "$(pkg_mgr)" in
+    dnf) echo "sudo dnf install $pkgs" ;;
+    pacman) echo "sudo pacman -S $pkgs" ;;
+    zypper) echo "sudo zypper install $pkgs" ;;
+    *) echo "sudo apt install $pkgs" ;;
+  esac
+}
 
 help() {
   cat <<EOF
@@ -55,7 +92,7 @@ ${C_ACCENT}${C_BOLD}usage${C_RESET}   ${C_GRAY}play.sh /path/to/game.exe [modes.
 ${C_ACCENT}${C_BOLD}modes${C_RESET}
 ${C_WHITE}${C_BOLD}   Bep${C_RESET}     ${C_DIM}BepInEx mod loader (winhttp=n,b)${C_RESET}
 ${C_WHITE}${C_BOLD}   hud${C_RESET}     ${C_DIM}translucent HUD overlay (FPS from play's Vulkan layer)${C_RESET}
-${C_WHITE}${C_BOLD}   MangoHud${C_RESET}${C_DIM} MangoHud overlay + FPS log (needs: sudo apt install mangohud)${C_RESET}
+${C_WHITE}${C_BOLD}   MangoHud${C_RESET}${C_DIM} MangoHud overlay + FPS log (needs: $(pkg_hint mangohud))${C_RESET}
 ${C_DIM}${C_WHITE}${C_BOLD}   ─ modes combine in any order, e.g. 'game.exe Bep hud'${C_RESET}
 
 ${C_ACCENT}${C_BOLD}config${C_RESET}  ${C_GRAY}${PLAY_CONFIG:-~/.config/play/config}${C_RESET}
@@ -106,10 +143,10 @@ FPS_LAYER_SRC="$PLAY_DIR/fpslayer"
 FPS_LAYER_DIR="${PLAY_CACHE_DIR:-$HOME/.cache/play}/fpslayer"
 
 ensure_fps_layer() {
-  command -v gcc >/dev/null 2>&1 || { echo "play: gcc not found - HUD FPS disabled" >&2; return 1; }
+  command -v gcc >/dev/null 2>&1 || { echo "play: gcc not found - HUD FPS disabled ($(pkg_hint gcc))" >&2; return 1; }
   mkdir -p "$FPS_LAYER_DIR" /tmp/play
   if ! printf '#include <vulkan/vulkan.h>\n#include <vulkan/vk_layer.h>\n' | gcc -x c -fsyntax-only - >/dev/null 2>&1; then
-    echo "play: Vulkan headers not found - HUD FPS disabled" >&2
+    echo "play: Vulkan headers not found - HUD FPS disabled ($(pkg_hint libvulkan-dev))" >&2
     return 1
   fi
   if [ ! -f "$FPS_LAYER_DIR/play_fps.so" ] || [ "$FPS_LAYER_SRC/play_fps.c" -nt "$FPS_LAYER_DIR/play_fps.so" ]; then

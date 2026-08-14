@@ -28,7 +28,40 @@ shows live system stats and FPS.
 | Vulkan drivers for your GPU | needed by DXVK |
 | `gcc` + Vulkan headers (`vulkan/vulkan.h`) | build the HUD's FPS layer on first use |
 | python3-gi (GTK3) | the `hud` overlay |
-| `mangohud` *(optional)* | only for the `MangoHud` mode: `sudo apt install mangohud` |
+| `mangohud` *(optional)* | only for the `MangoHud` mode |
+
+### Dependencies by distro
+
+`play` is developed on **Ubuntu** but is a first-class citizen on **Fedora**
+(Arch and openSUSE also work). The package names differ slightly:
+
+| Package | Ubuntu / Debian | Fedora |
+|---|---|---|
+| Vulkan headers | `libvulkan-dev` | `vulkan-headers` |
+| HUD GTK3 bindings | `python3-gi gir1.2-gtk-3.0` | `python3-gobject gtk3` |
+| `vulkaninfo` (GPU detection) | `vulkan-tools` | `vulkan-tools` |
+| `gcc` | `gcc` | `gcc` |
+| `mangohud` *(optional)* | `mangohud` | `mangohud` |
+
+Ubuntu:
+
+```bash
+sudo apt install gcc libvulkan-dev python3-gi gir1.2-gtk-3.0 vulkan-tools
+sudo apt install mangohud     # optional, only for the MangoHud mode
+```
+
+Fedora:
+
+```bash
+sudo dnf install gcc vulkan-headers python3-gobject gtk3 vulkan-tools
+sudo dnf install mangohud     # optional, only for the MangoHud mode
+```
+
+Or let the installer pick the right packages for your distro:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Omar-Khaled-57/play/main/install.sh | bash -s -- --deps
+```
 
 ## Install
 
@@ -218,9 +251,9 @@ Notes:
 | Problem | Fix |
 |---|---|
 | "hud not found" | `play` looks for `hud` next to `play.sh` — make sure the whole `play` folder is intact and the file is executable. |
-| No FPS in the HUD | `gcc` or Vulkan headers missing → install them (e.g. `sudo apt install gcc libvulkan-dev`). FPS only shows for Vulkan games. |
+| No FPS in the HUD | `gcc` or Vulkan headers missing → install them (`sudo apt install gcc libvulkan-dev`, Fedora: `sudo dnf install gcc vulkan-headers`). FPS only shows for Vulkan games. |
 | HUD not in the corner | You're on Wayland without XWayland/`DISPLAY` — see *Notes* above. |
-| `MangoHud` does nothing | `sudo apt install mangohud`. |
+| `MangoHud` does nothing | `sudo apt install mangohud` (Fedora: `sudo dnf install mangohud`). |
 | Wrong GPU being used | Set `GPU_NAME` in the config, or install Vulkan drivers for the discrete GPU. |
 | Overlay too transparent / bright | Scroll the wheel, or set `HMNTR_OPACITY`. |
 

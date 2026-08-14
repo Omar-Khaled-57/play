@@ -18,8 +18,55 @@ info() { printf '\033[32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m!\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-command -v curl >/dev/null 2>&1 || die "curl is required (sudo apt install curl)"
+# Distro-aware package helpers. play is developed on Ubuntu but is a first-class
+# citizen on Fedora (dnf), Arch (pacman) and openSUSE (zypper) out of the box.
+pkg_mgr() {
+  if [ -r /etc/os-release ]; then
+    case "$(sed -n 's/^ID=//p' /etc/os-release | tr -d '"')" in
+      fedora|rhel|centos|rocky|alma) echo dnf ;;
+      arch|manjaro|endeavouros) echo pacman ;;
+      opensuse*|suse) echo zypper ;;
+      *) echo apt ;;
+    esac
+  else
+    echo apt
+  fi
+}
+pkg_name() { # debian-style package name -> this distro's name
+  case "$(pkg_mgr)" in
+    dnf|pacman)
+      case "$1" in
+        libvulkan-dev) echo vulkan-headers ;;
+        python3-gi) echo python3-gobject ;;
+        python3-gi-cairo) echo python3-cairo ;;
+        gir1.2-gtk-3.0) echo gtk3 ;;
+        *) echo "$1" ;;
+      esac ;;
+    *) echo "$1" ;;
+  esac
+}
+pkg_install() { # echo the package-manager command to install the given deps
+  local pkgs p
+  for p in "$@"; do pkgs="${pkgs:+$pkgs }$(pkg_name "$p")"; done
+  case "$(pkg_mgr)" in
+    dnf) echo "sudo dnf install $pkgs" ;;
+    pacman) echo "sudo pacman -S --needed $pkgs" ;;
+    zypper) echo "sudo zypper install $pkgs" ;;
+    *) echo "sudo apt install $pkgs" ;;
+  esac
+}
+
+command -v curl >/dev/null 2>&1 || die "curl is required ($(pkg_install curl))"
 command -v tar  >/dev/null 2>&1 || die "tar is required"
+
+case "${1:-}" in
+  -d|--deps)
+    info "installing play's runtime dependencies for your distro..."
+    eval "$(pkg_install curl tar gcc libvulkan-dev python3-gi gir1.2-gtk-3.0 vulkan-tools)"
+    info "dependencies installed. re-run without --deps to install play."
+    exit 0
+    ;;
+esac
 
 if [ "$VERSION" = latest ]; then
   info "resolving latest release of $REPO"
