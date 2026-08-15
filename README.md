@@ -12,6 +12,9 @@ shows live system stats and FPS.
 
 - Launch any Windows `.exe` with Wine + DXVK, automatically picking your
   discrete GPU (NVIDIA optimisations are only applied on NVIDIA hardware).
+- DXVK is obtained and installed automatically (bundled copy, else the
+  distro's, else downloaded from GitHub), and native DLL overrides are
+  registered in your Wine prefix so DXVK is actually used.
 - Combine multiple modes in one command: `play game.exe Bep hud`.
 - HUD overlay pinned to the top-right corner with CPU / GPU / RAM / FPS
   — no MangoHud needed for FPS (it uses its own Vulkan layer).
@@ -24,7 +27,7 @@ shows live system stats and FPS.
 | What | Why |
 |---|---|
 | Wine with Vulkan support (GE-Proton recommended) | runs the game |
-| DXVK installed in your Wine prefix | translates Direct3D to Vulkan |
+| DXVK (installed automatically on first run) | translates Direct3D to Vulkan |
 | Vulkan drivers for your GPU | needed by DXVK |
 | `gcc` + Vulkan headers (`vulkan/vulkan.h`) | build the HUD's FPS layer on first use |
 | python3-gi (GTK3) | the `hud` overlay |
@@ -39,7 +42,6 @@ shows live system stats and FPS.
 |---|---|---|
 | Vulkan headers | `libvulkan-dev` | `vulkan-headers` |
 | HUD GTK3 bindings | `python3-gi gir1.2-gtk-3.0` | `python3-gobject gtk3` |
-| `vulkaninfo` (GPU detection) | `vulkan-tools` | `vulkan-tools` |
 | `gcc` | `gcc` | `gcc` |
 | `mangohud` *(optional)* | `mangohud` | `mangohud` |
 
@@ -100,7 +102,10 @@ play hud                           # HUD overlay only (system monitor)
 play --help                        # show help with the banner
 ```
 
-That's it. The first time you use `hud`, the FPS Vulkan layer is compiled
+That's it. On the first game run, `play` builds a tiny Vulkan GPU probe,
+downloads a compatible DXVK if needed, installs it into your prefix and
+registers the native DLL overrides — you don't have to set any of that up
+manually. The first time you use `hud`, the FPS Vulkan layer is compiled
 automatically (you'll see a message if `gcc` or the Vulkan headers are
 missing — the game still runs, just without the FPS meter).
 
@@ -226,12 +231,12 @@ All variables are optional; defaults are automatic.
 | `WINE_BIN` | newest GE-Proton in `~/.local/share`, else system `wine` | the wine binary to use |
 | `GPU_NAME` | auto-detected discrete GPU | DXVK device filter |
 | `WINEPREFIX` | `~/.wine` | Wine prefix to use |
+| `DXVK_VER` | auto (1.10.x for Vulkan < 1.3, else latest) | DXVK version to use |
 
 Example:
 
 ```bash
 WINE_BIN="$HOME/.local/share/GE-Proton11-3/files/bin/wine"
-GPU_NAME="NVIDIA GeForce MX130"
 WINEPREFIX="$HOME/.wine"
 ```
 
@@ -239,10 +244,18 @@ Notes:
 
 - If `WINE_BIN` is unset, the newest GE-Proton in `~/.local/share` is used
   (`GE-Proton*/files/bin/wine`), falling back to the system `wine`.
-- The discrete GPU is auto-detected from `vulkaninfo` when `GPU_NAME` is
-  unset. NVIDIA-only optimisations (`__NV_PRIME_RENDER_OFFLOAD`,
-  `__GLX_VENDOR_LIBRARY_NAME`) are applied only when an NVIDIA GPU is
-  detected, so AMD/Intel machines are unaffected.
+- The discrete GPU is auto-detected by a tiny Vulkan probe (`vkdevs/`) that
+  enumerates devices directly, so it works even where `vulkaninfo --summary`
+  crashes (e.g. NVIDIA PRIME offload on Wayland/XWayland). `nvidia-smi` is
+  used as a fallback on NVIDIA, then `vulkaninfo`. NVIDIA-only optimisations
+  (`__NV_PRIME_RENDER_OFFLOAD`, `__GLX_VENDOR_LIBRARY_NAME`,
+  `__VK_LAYER_NV_optimus`) are applied only when an NVIDIA GPU is detected,
+  so AMD/Intel machines are unaffected.
+- DXVK: `play` uses a copy bundled in `play/dxvk/<ver>`, else the distro's
+  (`/usr/share/dxvk` …), else downloads it from GitHub. On NVIDIA 470-class
+  drivers (Vulkan 1.2) it picks DXVK 1.10.x (DXVK 2.x+ needs Vulkan 1.3 and
+  won't render on those GPUs) and forces immediate present to avoid the PRIME
+  offload white-screen.
 - HUD options (`HMNTR_*`, `PLAY_FPS_FILE`) can also be set here or as
   environment variables.
 
@@ -254,7 +267,8 @@ Notes:
 | No FPS in the HUD | `gcc` or Vulkan headers missing → install them (`sudo apt install gcc libvulkan-dev`, Fedora: `sudo dnf install gcc vulkan-headers`). FPS only shows for Vulkan games. |
 | HUD not in the corner | You're on Wayland without XWayland/`DISPLAY` — see *Notes* above. |
 | `MangoHud` does nothing | `sudo apt install mangohud` (Fedora: `sudo dnf install mangohud`). |
-| Wrong GPU being used | Set `GPU_NAME` in the config, or install Vulkan drivers for the discrete GPU. |
+| Wrong GPU being used | With `GPU_NAME` unset, `play` auto-detects the discrete GPU via its Vulkan probe (works even where `vulkaninfo` fails). Still wrong? Set `GPU_NAME` explicitly. |
+| White screen / frozen first frame (NVIDIA PRIME) | Fixed automatically: on NVIDIA Vulkan 1.2, DXVK 1.10.x runs with immediate present (`dxvk.syncInterval = 0`) unless the game ships its own `dxvk.conf`. |
 | Overlay too transparent / bright | Scroll the wheel, or set `HMNTR_OPACITY`. |
 
 ## Uninstall

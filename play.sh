@@ -1,21 +1,35 @@
 #!/bin/bash
 # play.sh <game.exe> [modes...] [args...]
-# Run a Windows game via Wine + DXVK, favouring the discrete GPU.
+# Run a Windows game via Wine + DXVK, always favouring the discrete GPU.
 #
 # Modes (any number, any order):
 #   Bep|bep|bepinex    BepInEx mod loader (winhttp=n,b)
 #   hud|Hud|hmntr      translucent HUD overlay (FPS from play's own Vulkan layer)
 #   MangoHud|mangohud  MangoHud overlay + FPS log (needs: mangohud package)
 #
+# GPU selection works on any vendor / any setup:
+#   - a tiny Vulkan probe (vkdevs/) picks a discrete GPU if one exists,
+#     otherwise the integrated one (no display / PRIME setup included)
+#   - NVIDIA: PRIME render offload + optimus layer + DXVK device filter
+#   - AMD/Intel: DRI_PRIME + DXVK device filter where applicable
+#   - GPU_NAME (config) overrides everything
+#
+# DXVK is obtained automatically (first run): bundled in
+# $PLAY_DIR/dxvk/<ver>, else the distro's DXVK (/usr/share/dxvk ...),
+# else downloaded from GitHub. Native DLL overrides are registered in the
+# Wine prefix so DXVK is actually used. On NVIDIA 470-class (Vulkan 1.2)
+# DXVK 1.10.x gets immediate present forced (PRIME offload white-screen fix).
+#
 # Config (optional, sourced if present):
 #   $PLAY_CONFIG  or  ~/.config/play/config
 #     WINE_BIN="/path/to/wine"          # default: GE-Proton, else system wine
 #     GPU_NAME="NVIDIA GeForce MX130"   # default: auto-detected discrete GPU
 #     WINEPREFIX="$HOME/.wine"
+#     DXVK_VER="1.10.3"                 # default: auto (1.10.x on Vulkan<1.3)
 #   HUD options (env): HMNTR_METERS, HMNTR_INTERVAL, HMNTR_OPACITY
 set -u
 
-VERSION="0.9.0"
+VERSION="0.9.2"
 
 C_RESET="$(tput sgr0 2>/dev/null)"
 C_BOLD="$(tput bold 2>/dev/null)"
@@ -30,6 +44,7 @@ CONFIG="${PLAY_CONFIG:-$HOME/.config/play/config}"
 [ -f "$CONFIG" ] && . "$CONFIG"
 
 PLAY_DIR="$(dirname "$(readlink -f "$0")")"
+PLAY_CACHE_DIR="${PLAY_CACHE_DIR:-$HOME/.cache/play}"
 
 # Distro-aware package hints. play is developed on Ubuntu but supports Fedora
 # (dnf), Arch (pacman) and openSUSE (zypper) out of the box.
@@ -97,8 +112,9 @@ ${C_DIM}${C_WHITE}${C_BOLD}   ─ modes combine in any order, e.g. 'game.exe Bep
 
 ${C_ACCENT}${C_BOLD}config${C_RESET}  ${C_GRAY}${PLAY_CONFIG:-~/.config/play/config}${C_RESET}
 ${C_WHITE}   WINE_BIN${C_RESET}    ${C_DIM}wine binary (default newest GE-Proton, else system wine)${C_RESET}
-${C_WHITE}   GPU_NAME${C_RESET}    ${C_DIM}DXVK device filter (auto-detected)${C_RESET}
+${C_WHITE}   GPU_NAME${C_RESET}    ${C_DIM}DXVK device filter (auto-detected: discrete GPU)${C_RESET}
 ${C_WHITE}   WINEPREFIX${C_RESET}  ${C_DIM}wine prefix (default ~/.wine)${C_RESET}
+${C_WHITE}   DXVK_VER${C_RESET}    ${C_DIM}force a DXVK version (default: auto)${C_RESET}
 ${C_WHITE}   HMNTR_*${C_RESET}     ${C_DIM}HUD options: METERS / INTERVAL / OPACITY (see README)${C_RESET}
 
 ${C_ACCENT}${C_BOLD}examples${C_RESET}
@@ -140,7 +156,7 @@ GAME="$(readlink -f "$GAME")"
 shift
 
 FPS_LAYER_SRC="$PLAY_DIR/fpslayer"
-FPS_LAYER_DIR="${PLAY_CACHE_DIR:-$HOME/.cache/play}/fpslayer"
+FPS_LAYER_DIR="$PLAY_CACHE_DIR/fpslayer"
 
 ensure_fps_layer() {
   command -v gcc >/dev/null 2>&1 || { echo "play: gcc not found - HUD FPS disabled ($(pkg_hint gcc))" >&2; return 1; }
@@ -159,6 +175,133 @@ ensure_fps_layer() {
   export VK_LAYER_PATH="$FPS_LAYER_DIR"
   export VK_INSTANCE_LAYERS="${VK_INSTANCE_LAYERS:+$VK_INSTANCE_LAYERS:}VK_LAYER_PLAY_fps"
   export PLAY_FPS_FILE="${PLAY_FPS_FILE:-/tmp/play/fps-$(basename "$GAME").txt}"
+}
+
+VKDEVS_SRC="$PLAY_DIR/vkdevs/vkdevs.c"
+VKDEVS_BIN="$PLAY_CACHE_DIR/vkdevs/vkdevs"
+
+# Build the tiny Vulkan GPU probe. Tries -lvulkan first, then links the
+# loader by full path (some distros only ship libvulkan.so.1).
+ensure_vkdevs() {
+  command -v gcc >/dev/null 2>&1 || return 1
+  [ -f "$VKDEVS_SRC" ] || return 1
+  mkdir -p "$(dirname "$VKDEVS_BIN")"
+  if [ ! -x "$VKDEVS_BIN" ] || [ "$VKDEVS_SRC" -nt "$VKDEVS_BIN" ]; then
+    local lib=""
+    if ! gcc -O2 -o "$VKDEVS_BIN" "$VKDEVS_SRC" -lvulkan 2>"$(dirname "$VKDEVS_BIN")/build.log"; then
+      lib="$(ldconfig -p 2>/dev/null | awk '$1=="libvulkan.so.1" {print $NF; exit}')"
+      if [ -n "$lib" ] && gcc -O2 -o "$VKDEVS_BIN" "$VKDEVS_SRC" "$lib" 2>"$(dirname "$VKDEVS_BIN")/build.log"; then
+        :
+      else
+        echo "play: could not build the Vulkan GPU probe (see $(dirname "$VKDEVS_BIN")/build.log)" >&2
+        return 1
+      fi
+    fi
+  fi
+}
+
+# Print the discrete GPU name (or the best fallback) + its Vulkan API
+# version. Emits: "<name>|<major.minor>". Empty on failure.
+detect_gpu() {
+  if [ -n "${GPU_NAME:-}" ]; then
+    echo "$GPU_NAME|"
+    return 0
+  fi
+  if ensure_vkdevs; then
+    local pick
+    pick="$("$VKDEVS_BIN" 2>/dev/null | sed -n 's/^PICK //p' | head -1)"
+    [ -n "$pick" ] && { echo "$pick"; return 0; }
+  fi
+  command -v nvidia-smi >/dev/null 2>&1 && {
+    local nv
+    nv="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
+    [ -n "$nv" ] && { echo "$nv|"; return 0; }
+  }
+  command -v vulkaninfo >/dev/null 2>&1 && {
+    local v
+    v="$(vulkaninfo --summary 2>/dev/null | grep -i "deviceName" | grep -viE "intel|llvmpipe|software" | head -1 | sed 's/.*= *//')"
+    [ -n "$v" ] && { echo "$v|"; return 0; }
+  }
+  return 1
+}
+
+# DXVK version to use. DXVK 2.x+ needs Vulkan 1.3; older drivers (e.g.
+# NVIDIA 470, Vulkan 1.2) get DXVK 1.10.x. DXVK_VER overrides everything.
+choose_dxvk_ver() {
+  if [ -n "${DXVK_VER:-}" ]; then
+    echo "$DXVK_VER"
+    return 0
+  fi
+  case "$GPU_API" in
+    1.3.*|1.4.*|2.*) echo latest ;;
+    *)
+      # unknown API: NVIDIA legacy drivers are the only common 1.2 case, so
+      # play it safe there; everything else can take the latest DXVK
+      case "${GPU_ACTIVE,,}" in
+        *nvidia*) echo 1.10.3 ;;
+        *) echo latest ;;
+      esac
+      ;;
+  esac
+}
+
+# Echo a directory that contains <ver>/x64 dlls, preferring the play-bundled
+# copy, then the distro's, else empty.
+dxvk_src_dir() {
+  local ver="$1" src
+  for src in "$PLAY_DIR/dxvk/$ver" /usr/share/dxvk /usr/lib/dxvk /usr/lib64/dxvk; do
+    [ -d "$src/x64" ] && { echo "$src"; return 0; }
+  done
+  return 1
+}
+
+fetch_dxvk() {
+  local ver="$1" tag="" url tmp
+  command -v curl >/dev/null 2>&1 || return 1
+  command -v tar  >/dev/null 2>&1 || return 1
+  mkdir -p "$PLAY_DIR/dxvk"
+  if [ "$ver" = "latest" ]; then
+    tag="$(curl -fsSL --max-time 20 https://api.github.com/repos/doitsujin/dxvk/releases/latest 2>/dev/null \
+      | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*"tag_name": *"//;s/["\r]*$//')"
+  else
+    tag="$ver"
+  fi
+  tag="${tag#v}"
+  [ -n "$tag" ] || return 1
+  url="https://github.com/doitsujin/dxvk/releases/download/v$tag/dxvk-$tag.tar.gz"
+  tmp="$(mktemp -d)"
+  if curl -fsSL --max-time 120 "$url" | tar -xz -C "$tmp" 2>/dev/null; then
+    rm -rf "$PLAY_DIR/dxvk/$ver"
+    mv "$tmp/dxvk-$tag" "$PLAY_DIR/dxvk/$ver" 2>/dev/null
+  fi
+  rm -rf "$tmp"
+  [ -d "$PLAY_DIR/dxvk/$ver/x64" ]
+}
+
+# Copy DXVK into the Wine prefix and register native overrides so Wine
+# actually loads it (Wine ignores native dlls without an override).
+install_dxvk() {
+  local ver="$1" src base dll
+  src="$(dxvk_src_dir "$ver")"
+  if [ -z "$src" ]; then
+    echo "play: DXVK $ver not bundled or in system paths - downloading..." >&2
+    fetch_dxvk "$ver" || { echo "play: could not obtain DXVK $ver; continuing without it" >&2; return 1; }
+    src="$(dxvk_src_dir "$ver")"
+    [ -n "$src" ] || return 1
+  fi
+  local sys32="$WINEPREFIX/drive_c/windows/system32"
+  local syswow="$WINEPREFIX/drive_c/windows/syswow64"
+  mkdir -p "$sys32" "$syswow"
+  for dll in "$src"/x64/*.dll; do cp -f "$dll" "$sys32/"; done
+  if [ -d "$src/x32" ]; then for dll in "$src"/x32/*.dll; do cp -f "$dll" "$syswow/"; done; fi
+  for dll in "$src"/x64/*.dll; do
+    base="$(basename "$dll" .dll)"
+    case "$base" in dxgi|d3d9|d3d10|d3d10_1|d3d10core|d3d11)
+      WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$WINE_BIN" reg add \
+        "HKCU\\Software\\Wine\\DllOverrides" /v "$base" /d native /f >/dev/null 2>&1
+      ;;
+    esac
+  done
 }
 
 HUD=0
@@ -185,37 +328,58 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-detect_gpu() {
-  command -v vulkaninfo >/dev/null 2>&1 || return 1
-  vulkaninfo --summary 2>/dev/null \
-    | grep -i "deviceName" \
-    | grep -viE "intel|llvmpipe|software" \
-    | head -1 \
-    | sed 's/.*= *//'
-}
-
 export WINEPREFIX="${WINEPREFIX:-$HOME/.wine}"
-if [ -n "${GPU_NAME:-}" ]; then
-  GPU_ACTIVE="$GPU_NAME"
-  export DXVK_FILTER_DEVICE_NAME="$GPU_NAME"
-else
-  GPU_ACTIVE="$(detect_gpu)"
-  [ -n "$GPU_ACTIVE" ] && export DXVK_FILTER_DEVICE_NAME="$GPU_ACTIVE"
-fi
-case "$GPU_ACTIVE" in
-  *NVIDIA*|*nvidia*)
-    export __NV_PRIME_RENDER_OFFLOAD=1
-    export __GLX_VENDOR_LIBRARY_NAME=nvidia
-    ;;
-esac
-export WINEESYNC=1
-export WINEFSYNC=1
 
+# Resolve the wine binary before we need to touch the prefix.
 WINE_BIN="${WINE_BIN:-}"
 if [ -z "$WINE_BIN" ]; then
   WINE_BIN="$(ls -d "$HOME"/.local/share/GE-Proton*/files/bin/wine 2>/dev/null | sort -V | tail -n 1)"
   [ -x "$WINE_BIN" ] || WINE_BIN="$(command -v wine)"
 fi
+
+# Pick the GPU and set the env to actually use it.
+GPU_INFO="$(detect_gpu)"
+GPU_ACTIVE="${GPU_INFO%%|*}"
+GPU_API="${GPU_INFO#*|}"
+[ "$GPU_API" = "$GPU_INFO" ] && GPU_API=""
+
+case "${GPU_ACTIVE,,}" in
+  *nvidia*)
+    export __NV_PRIME_RENDER_OFFLOAD=1
+    export __GLX_VENDOR_LIBRARY_NAME=nvidia
+    export __VK_LAYER_NV_optimus=NVIDIA_only
+    ;;
+  *radeon*|*amd*|*advanced*)
+    export DRI_PRIME=1
+    ;;
+esac
+if [ -n "$GPU_ACTIVE" ]; then
+  export DXVK_FILTER_DEVICE_NAME="$GPU_ACTIVE"
+fi
+
+# DXVK 1.x presents with the default swap interval (vsync). On NVIDIA PRIME
+# offload the GPU has no attached display, so that can stall on the first
+# present (white screen). Force immediate present for legacy NVIDIA + DXVK 1.x
+# unless the game ships its own dxvk.conf (a DXVK_CONFIG_FILE would ignore it).
+setup_dxvk_config() {
+  case "$DXVK_VER" in
+    1.9.*|1.10.*)
+      case "${GPU_ACTIVE,,}" in
+        *nvidia*)
+          [ -f "$(dirname "$GAME")/dxvk.conf" ] && return 0
+          printf 'dxvk.syncInterval = 0\n' > "$PLAY_CACHE_DIR/dxvk.conf"
+          export DXVK_CONFIG_FILE="$PLAY_CACHE_DIR/dxvk.conf"
+          ;;
+      esac
+      ;;
+  esac
+}
+
+DXVK_VER="$(choose_dxvk_ver)"
+export WINEESYNC=1
+export WINEFSYNC=1
+install_dxvk "$DXVK_VER"
+setup_dxvk_config
 
 cd "$(dirname "$GAME")" || exit 1
 

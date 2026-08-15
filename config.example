@@ -5,12 +5,17 @@
 # https://github.com/GloriousEggroll/proton-ge-custom/releases)
 #WINE_BIN="$HOME/.local/share/GE-Proton11-3/files/bin/wine"
 
-# GPU to force for DXVK. Default: auto-detected discrete GPU.
-# See `vulkaninfo --summary | grep deviceName` for valid names.
+# GPU to force for DXVK. Default: auto-detected discrete GPU (play probes the
+# Vulkan devices itself, so it works even where `vulkaninfo --summary` fails,
+# e.g. NVIDIA PRIME offload on Wayland/XWayland).
 #GPU_NAME="NVIDIA GeForce MX130"
 
 # Wine prefix to use.
 #WINEPREFIX="$HOME/.wine"
+
+# DXVK version to force. Default: auto — DXVK 1.10.x for Vulkan 1.2 drivers
+# (e.g. NVIDIA 470 Maxwell) so the game actually renders, latest otherwise.
+#DXVK_VER="1.10.3"
 
 # HUD overlay options (used by: play <game> hud)
 #HMNTR_METERS="cpu gpu ram fps"   # meters to show (cpu/gpu include temperature)

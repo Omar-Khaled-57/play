@@ -228,7 +228,59 @@ def overlay(Gtk, Gdk, GLib, meters, interval, opacity):
         win.resize(w, h)
         if not moved["v"]:
             win.move(sw - w - margin, margin)
-        win.set_keep_above(True)
+    def set_override_redirect():
+        try:
+            import ctypes
+            from gi.repository import GdkX11
+        except (ImportError, ValueError):
+            return
+        gdk_win = win.get_window()
+        if gdk_win is None:
+            return
+        xid = GdkX11.X11Window.get_xid(gdk_win)
+        x11 = ctypes.CDLL("libX11.so.6")
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x11.XChangeWindowAttributes.restype = None
+        x11.XChangeWindowAttributes.argtypes = [ctypes.c_void_p,
+                                                ctypes.c_ulong,
+                                                ctypes.c_ulong,
+                                                ctypes.c_void_p]
+        x11.XFlush.restype = None
+        x11.XFlush.argtypes = [ctypes.c_void_p]
+
+        xdpy = x11.XOpenDisplay(os.environ.get("DISPLAY", ":0").encode())
+        if not xdpy:
+            return
+
+        class XSetWindowAttributes(ctypes.Structure):
+            _fields_ = [
+                ("background_pixel", ctypes.c_ulong),
+                ("background_pixmap", ctypes.c_ulong),
+                ("border_pixel", ctypes.c_ulong),
+                ("border_pixmap", ctypes.c_ulong),
+                ("bit_gravity", ctypes.c_int),
+                ("win_gravity", ctypes.c_int),
+                ("backing_store", ctypes.c_int),
+                ("backing_planes", ctypes.c_ulong),
+                ("backing_pixel", ctypes.c_ulong),
+                ("save_under", ctypes.c_int),
+                ("event_mask", ctypes.c_long),
+                ("do_not_propagate_mask", ctypes.c_long),
+                ("override_redirect", ctypes.c_int),
+                ("colormap", ctypes.c_ulong),
+                ("cursor", ctypes.c_ulong),
+            ]
+
+        attrs = XSetWindowAttributes()
+        attrs.override_redirect = 1
+        CWOverrideRedirect = 1 << 9
+        x11.XChangeWindowAttributes(xdpy, xid, CWOverrideRedirect,
+                                    ctypes.byref(attrs))
+        x11.XFlush(xdpy)
+
+    win.realize()
+    set_override_redirect()
 
     def tick():
         markup[0] = build_markup()
@@ -240,14 +292,42 @@ def overlay(Gtk, Gdk, GLib, meters, interval, opacity):
         place(tw, th)
         return True
 
+    drag = {"active": False, "dx": 0, "dy": 0}
+
     def on_press(w, ev):
         if ev.button == 3:
             Gtk.main_quit()
             return True
         if ev.button == 1:
+            drag["active"] = True
+            drag["dx"] = int(ev.x_root) - win.get_position()[0]
+            drag["dy"] = int(ev.y_root) - win.get_position()[1]
             moved["v"] = True
-            win.begin_move_drag(ev.button, int(ev.x_root), int(ev.y_root),
-                                ev.time)
+            gdk_win = win.get_window()
+            if gdk_win is not None:
+                gdk_win.raise_()
+                try:
+                    Gdk.pointer_grab(gdk_win, True,
+                                     Gdk.EventMask.BUTTON_RELEASE_MASK
+                                     | Gdk.EventMask.POINTER_MOTION_MASK,
+                                     None, None, 0)
+                except Exception:
+                    pass
+            return True
+        return False
+
+    def on_release(w, ev):
+        drag["active"] = False
+        try:
+            Gdk.pointer_ungrab(0)
+        except Exception:
+            pass
+        return False
+
+    def on_motion(w, ev):
+        if drag["active"]:
+            win.move(int(ev.x_root) - drag["dx"],
+                     int(ev.y_root) - drag["dy"])
             return True
         return False
 
@@ -260,8 +340,12 @@ def overlay(Gtk, Gdk, GLib, meters, interval, opacity):
         return True
 
     win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK
+                   | Gdk.EventMask.BUTTON_RELEASE_MASK
+                   | Gdk.EventMask.POINTER_MOTION_MASK
                    | Gdk.EventMask.SCROLL_MASK)
     win.connect("button-press-event", on_press)
+    win.connect("button-release-event", on_release)
+    win.connect("motion-notify-event", on_motion)
     win.connect("scroll-event", on_scroll)
 
     def _quit(*_a):
