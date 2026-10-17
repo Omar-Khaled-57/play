@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build & attach assets to (e.g. v0.9.3)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev
+
+      - name: Sanity-check the Vulkan FPS layer compiles
+        run: |
+          gcc -shared -fPIC -O2 -o /tmp/play_fps.so fpslayer/play_fps.c -lpthread
+          gcc -O2 -o /tmp/vkdevs vkdevs/vkdevs.c -lvulkan
+          python3 -c "import ast,sys; ast.parse(open('hud').read())"
+
+      - name: Package
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          mkdir -p dist/play
+          cp -r play.sh hud typo.sh install.sh config.example LICENSE README.md fpslayer vkdevs dist/play/
+          chmod +x dist/play/play.sh dist/play/hud dist/play/typo.sh dist/play/install.sh
+          tar -czf "play-${TAG}.tar.gz" -C dist play
+          sha256sum "play-${TAG}.tar.gz" > SHA256SUMS.txt
+          ls -l
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            play-*.tar.gz
+            SHA256SUMS.txt
+          generate_release_notes: true

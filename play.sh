@@ -29,7 +29,7 @@
 #   HUD options (env): HMNTR_METERS, HMNTR_INTERVAL, HMNTR_OPACITY
 set -u
 
-VERSION="0.9.2"
+VERSION="0.9.3"
 
 C_RESET="$(tput sgr0 2>/dev/null)"
 C_BOLD="$(tput bold 2>/dev/null)"
