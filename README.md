@@ -8,6 +8,15 @@ A simple launcher that runs Windows games on Linux via **Wine + DXVK**, always
 favouring your discrete GPU, with an optional translucent **HUD overlay** that
 shows live system stats and FPS.
 
+## Stack
+
+- [`play.sh`](play.sh) — Bash launcher, mode parser, GPU/DXVK setup, Wine exec.
+- [`install.sh`](install.sh) — Bash installer for releases and dependencies.
+- [`hud`](hud) — Python 3 / GTK3 overlay using `python3-gi`.
+- [`fpslayer/`](fpslayer/) — C Vulkan instance layer for FPS counting.
+- [`vkdevs/`](vkdevs/) — C Vulkan probe for discrete-GPU selection.
+- [`dxvk/`](dxvk/) — bundled DXVK DLLs (`1.10.3/`, `latest/`).
+
 ## Features
 
 - Launch any Windows `.exe` with Wine + DXVK, automatically picking your
@@ -21,6 +30,16 @@ shows live system stats and FPS.
 - Standalone `play hud` mode turns the overlay into a plain system monitor.
 - BepInEx mod loader support (one keyword).
 - MangoHud overlay + FPS logging as an alternative.
+
+## Visual presentation
+
+The optional HUD is a compact translucent desktop overlay for CPU, GPU, RAM,
+and FPS. It does not recolor the game window. Status colors and exact appearance
+can vary by desktop theme and MangoHud mode, so this project does not define a
+fixed web-style color palette or claim a screenshot that is not checked in.
+
+See the [visual identity guide](docs/visual-identity.md) for the HUD's visual
+contract.
 
 ## Requirements
 
@@ -108,6 +127,22 @@ registers the native DLL overrides — you don't have to set any of that up
 manually. The first time you use `hud`, the FPS Vulkan layer is compiled
 automatically (you'll see a message if `gcc` or the Vulkan headers are
 missing — the game still runs, just without the FPS meter).
+
+## Command reference
+
+| Command | Source | Purpose |
+| --- | --- | --- |
+| `play "/path/to/game.exe"` | `play.sh` | Run a game via Wine + DXVK |
+| `play "/path/to/game.exe" hud` | `play.sh` | Run a game with the HUD overlay |
+| `play hud` / `play --hud` | `play.sh` | Standalone system-monitor overlay |
+| `play --help` | `play.sh` | Banner, modes, config keys, examples |
+| `play --version` | `play.sh` | Print `play 0.9.2` (value from `VERSION`) |
+| `curl -fsSL https://raw.githubusercontent.com/Omar-Khaled-57/play/main/install.sh \| bash` | README | Install the latest release into `~/.local/share/play` |
+| `curl -fsSL https://raw.githubusercontent.com/Omar-Khaled-57/play/main/install.sh \| bash -s -- --deps` | README | Install distro runtime dependencies only |
+| `PLAY_VERSION=v0.8.1 curl -fsSL https://raw.githubusercontent.com/Omar-Khaled-57/play/main/install.sh \| bash` | README | Install a specific release tag |
+
+See [`docs/`](docs/) for architecture, configuration, testing, and deployment
+details.
 
 ## Usage
 
@@ -283,6 +318,18 @@ rm -rf ~/.config/play                 # remove the config file (optional)
 Then remove the `# play launcher` PATH line from `~/.bashrc` if you don't want
 `~/.local/bin` anymore.
 
+## Docs
+
+- Documentation index: [`docs/README.md`](docs/README.md)
+- Product: [`docs/product.md`](docs/product.md)
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
+- Development: [`docs/development.md`](docs/development.md)
+- Configuration: [`docs/configuration.md`](docs/configuration.md)
+- Testing: [`docs/testing.md`](docs/testing.md)
+- Deployment: [`docs/deployment.md`](docs/deployment.md)
+- Changelog: [`docs/changelog.md`](docs/changelog.md)
+- Visual identity: [`docs/visual-identity.md`](docs/visual-identity.md)
+
 ## License
 
-MIT
+MIT — see [`LICENSE`](LICENSE).
